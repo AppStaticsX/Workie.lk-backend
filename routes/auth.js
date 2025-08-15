@@ -5,7 +5,7 @@ const User = require('../models/User');
 const Profile = require('../models/Profile');
 const { auth } = require('../middleware/auth');
 const { validateRegister, validateLogin } = require('../middleware/validation');
-const { sendWelcomeEmail } = require('../utils/emailService'); // <-- Add this line
+const { sendEmailVerificationCode } = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -113,16 +113,24 @@ router.post('/register', validateRegister, async (req, res) => {
     // Create empty profile for the user
     await Profile.create({ user: user._id });
 
-    // Send welcome email (do not block response on error)
-    sendWelcomeEmail(user.email, user.firstName, user.userType)
-      .catch(err => console.error('Failed to send welcome email:', err));
+    // Generate 5-digit verification code
+    const verificationCode = Math.floor(10000 + Math.random() * 90000).toString();
+
+    // Store code and expiry in user
+    user.emailVerificationToken = verificationCode;
+    user.emailVerificationExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    await user.save();
+
+    // Send verification code email (do not block response on error)
+    sendEmailVerificationCode(user.email, user.firstName, verificationCode)
+      .catch(err => console.error('Failed to send verification code email:', err));
 
     // Generate token
     const token = generateToken(user._id);
 
     res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: 'User registered successfully. Verification code sent to email.',
       data: {
         user,
         token

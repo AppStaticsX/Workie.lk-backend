@@ -2,13 +2,11 @@ const nodemailer = require('nodemailer');
 
 // Create transporter
 const createTransporter = () => {
-  return nodemailer.createTransporter({
-    host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT,
-    secure: false, // true for 465, false for other ports
+  return nodemailer.createTransport({
+    service: 'gmail',
     auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_PASS
     }
   });
 };
@@ -19,7 +17,7 @@ const sendEmail = async (options) => {
     const transporter = createTransporter();
     
     const mailOptions = {
-      from: `"Workie.lk" <${process.env.EMAIL_USER}>`,
+      from: `"Workie.lk" <${process.env.GMAIL_USER}>`,
       to: options.to,
       subject: options.subject,
       text: options.text,
@@ -152,21 +150,20 @@ const emailTemplates = {
     `
   }),
 
-  // Email verification
-  emailVerification: (firstName, verificationToken) => ({
+  // Email verification with 5-digit code
+  emailVerificationCode: (firstName, code) => ({
     subject: 'Verify Your Email - Workie.lk',
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #2563eb;">Verify Your Email Address</h2>
-        <p>Hi ${firstName},</p>
-        <p>Please verify your email address to complete your registration:</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.CLIENT_URL}/verify-email/${verificationToken}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
-            Verify Email
-          </a>
+      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto;">
+        <h2>Welcome to Workie.lk, ${firstName}!</h2>
+        <p>Thank you for registering. Please verify your email address using the code below:</p>
+        <div style="font-size: 2em; font-weight: bold; letter-spacing: 8px; margin: 20px 0; color: #1976d2;">
+          ${code}
         </div>
-        <p>If you didn't create an account with us, please ignore this email.</p>
-        <p>Best regards,<br>The Workie.lk Team</p>
+        <p>This code will expire in 10 minutes.</p>
+        <p>If you did not create this account, please ignore this email.</p>
+        <br>
+        <p>Best regards,<br>Workie.lk Team</p>
       </div>
     `
   })
@@ -227,8 +224,9 @@ const sendReviewReceivedEmail = async (email, recipientName, reviewerName, ratin
   });
 };
 
-const sendEmailVerificationEmail = async (email, firstName, verificationToken) => {
-  const template = emailTemplates.emailVerification(firstName, verificationToken);
+// Send email verification with 5-digit code
+const sendEmailVerificationCode = async (email, firstName, code) => {
+  const template = emailTemplates.emailVerificationCode(firstName, code);
   return await sendEmail({
     to: email,
     subject: template.subject,
@@ -244,5 +242,5 @@ module.exports = {
   sendApplicationAcceptedEmail,
   sendJobCompletedEmail,
   sendReviewReceivedEmail,
-  sendEmailVerificationEmail
+  sendEmailVerificationCode
 };
