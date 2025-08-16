@@ -54,19 +54,17 @@ const emailTemplates = {
   }),
 
   // Password reset email
-  passwordReset: (firstName, resetToken) => ({
-    subject: 'Password Reset Request - Workie.lk',
+  passwordReset: (firstName, code) => ({
+    subject: 'Password Reset Code - Workie.lk',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #2563eb;">Password Reset Request</h2>
         <p>Hi ${firstName},</p>
-        <p>You requested a password reset for your Workie.lk account.</p>
-        <p>Click the button below to reset your password (valid for 10 minutes):</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${process.env.CLIENT_URL}/reset-password/${resetToken}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
-            Reset Password
-          </a>
+        <p>Your password reset code is:</p>
+        <div style="font-size: 2em; font-weight: bold; letter-spacing: 8px; margin: 20px 0; color: #1976d2;">
+          ${code}
         </div>
+        <p>This code will expire in 10 minutes.</p>
         <p>If you didn't request this, please ignore this email.</p>
         <p>Best regards,<br>The Workie.lk Team</p>
       </div>

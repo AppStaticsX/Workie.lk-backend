@@ -255,23 +255,21 @@ router.post('/forgot-password', async (req, res) => {
       });
     }
 
-    // Generate reset token
-    const resetToken = crypto.randomBytes(20).toString('hex');
-    user.passwordResetToken = crypto
-      .createHash('sha256')
-      .update(resetToken)
-      .digest('hex');
+    // Generate 5-digit code
+    const resetCode = Math.floor(10000 + Math.random() * 90000).toString();
+
+    // Store hashed code and expiry in user
+    user.passwordResetToken = crypto.createHash('sha256').update(resetCode).digest('hex');
     user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
 
     await user.save();
 
-    // Send password reset email
-    await sendPasswordResetEmail(user.email, user.firstName, resetToken);
+    // Send the 5-digit code via email (update your emailService to use a code template)
+    await sendPasswordResetEmail(user.email, user.firstName, resetCode);
 
     res.status(200).json({
       success: true,
-      message: 'Password reset email sent'
-      // Do NOT return resetToken in production!
+      message: 'Password reset code sent to your email',
     });
   } catch (error) {
     res.status(500).json({
@@ -281,6 +279,60 @@ router.post('/forgot-password', async (req, res) => {
     });
   }
 });
+
+// ...existing code...
+
+// @route   POST /api/auth/verify-reset-code
+// @desc    Verify password reset code
+// @access  Public
+router.post('/verify-reset-code', async (req, res) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and code are required'
+      });
+    }
+
+    const user = await User.findOne({ email });
+    if (
+      !user ||
+      !user.passwordResetToken ||
+      !user.passwordResetExpires ||
+      user.passwordResetExpires < Date.now()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired code'
+      });
+    }
+
+    // Hash the code and compare
+    const hashedCode = crypto.createHash('sha256').update(code).digest('hex');
+    if (user.passwordResetToken !== hashedCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired code'
+      });
+    }
+
+    // Code is valid
+    res.status(200).json({
+      success: true,
+      message: 'Code verified successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// ...existing code...
 
 // @route   PUT /api/auth/reset-password/:token
 // @desc    Reset password
