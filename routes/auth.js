@@ -6,6 +6,7 @@ const Profile = require('../models/Profile');
 const { auth } = require('../middleware/auth');
 const { validateRegister, validateLogin } = require('../middleware/validation');
 const { sendEmailVerificationCode } = require('../utils/emailService');
+const { sendPasswordResetEmail } = require('../utils/emailService');
 
 const router = express.Router();
 
@@ -246,13 +247,6 @@ router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
 
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
-    }
-
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
@@ -261,14 +255,8 @@ router.post('/forgot-password', async (req, res) => {
       });
     }
 
-    // Generate 5-digit reset code
-    const resetCode = Math.floor(10000 + Math.random() * 90000).toString();
-    
-    // Generate reset token for later use
+    // Generate reset token
     const resetToken = crypto.randomBytes(20).toString('hex');
-    
-    // Store both code and hashed token
-    user.passwordResetCode = resetCode; // Store code for verification
     user.passwordResetToken = crypto
       .createHash('sha256')
       .update(resetToken)
@@ -277,21 +265,13 @@ router.post('/forgot-password', async (req, res) => {
 
     await user.save();
 
-    // Send email with the 5-digit code
-    // You'll need to implement this email service
-    try {
-      await sendPasswordResetCode(user.email, user.firstName, resetCode);
-    } catch (emailError) {
-      console.error('Failed to send reset code email:', emailError);
-      // Don't fail the request if email fails
-    }
+    // Send password reset email
+    await sendPasswordResetEmail(user.email, user.firstName, resetToken);
 
     res.status(200).json({
       success: true,
-      message: 'Password reset code sent to your email',
-      // Remove these in production:
-      resetCode: resetCode, // For testing only
-      resetToken: resetToken // For testing only
+      message: 'Password reset email sent'
+      // Do NOT return resetToken in production!
     });
   } catch (error) {
     res.status(500).json({
