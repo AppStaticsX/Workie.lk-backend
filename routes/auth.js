@@ -551,33 +551,19 @@ router.post('/resend-otp', async (req, res) => {
 router.post('/google-signin', async (req, res) => {
   console.log('Google Sign-In request body:', req.body); // Debug log
   try {
-    const { idToken, accessToken, userInfo } = req.body;
+    const { accessToken, userInfo } = req.body;
     
-    if (!idToken && !accessToken && !userInfo) {
+    if (!accessToken && !userInfo) {
       return res.status(400).json({
         success: false,
-        message: 'No authentication token or user info provided'
+        message: 'No access token or user info provided'
       });
     }
 
     let payload;
 
-    // Try to verify idToken first
-    if (idToken) {
-      try {
-        const ticket = await googleClient.verifyIdToken({
-          idToken,
-          audience: GOOGLE_CLIENT_ID,
-        });
-        payload = ticket.getPayload();
-      } catch (error) {
-        console.error('ID Token verification failed:', error);
-        // If idToken verification fails, we'll try accessToken or userInfo below
-      }
-    }
-
-    // If idToken verification failed or wasn't provided, try accessToken
-    if (!payload && accessToken) {
+    // Try to verify accessToken first
+    if (accessToken) {
       try {
         // Verify accessToken by making a request to Google's userinfo endpoint
         const response = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`);
@@ -597,7 +583,7 @@ router.post('/google-signin', async (req, res) => {
       }
     }
 
-    // If both token methods failed, use userInfo as fallback
+    // If accessToken verification failed, use userInfo as fallback
     if (!payload && userInfo && userInfo.email) {
       payload = {
         sub: userInfo.id,
