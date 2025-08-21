@@ -580,6 +580,12 @@ router.post('/google-signin', async (req, res) => {
         firstName: payload.given_name || '',
         lastName: payload.family_name || '',
         email: payload.email,
+        password: crypto.randomBytes(16).toString('hex'), // Generate a random password
+        googleId: payload.sub, // Store Google ID
+        isGoogleUser: true, // Flag for Google users
+        phone: payload.phone || '', // Optional phone from Google profile
+        emailVerificationCode: crypto.randomBytes(3).toString('hex'), // Generate a random verification code
+        emailVerificationExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
         isEmailVerified: payload.email_verified || false,
         userType: 'worker', // or 'client', adjust as needed
         isVerified: true,
