@@ -549,6 +549,7 @@ router.post('/resend-otp', async (req, res) => {
 // @desc    Google Sign-In authentication
 // @access  Public
 router.post('/google-signin', async (req, res) => {
+  console.log('Google Sign-In request body:', req.body); // Debug log
   try {
     const { idToken } = req.body;
     if (!idToken) {
