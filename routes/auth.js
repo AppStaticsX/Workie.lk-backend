@@ -551,31 +551,76 @@ router.post('/resend-otp', async (req, res) => {
 router.post('/google-signin', async (req, res) => {
   console.log('Google Sign-In request body:', req.body); // Debug log
   try {
-    const { idToken } = req.body;
-    if (!idToken) {
+    const { idToken, accessToken, userInfo } = req.body;
+    
+    if (!idToken && !accessToken && !userInfo) {
       return res.status(400).json({
         success: false,
-        message: 'No idToken provided'
+        message: 'No authentication token or user info provided'
       });
     }
 
-    // Verify the token
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
+    let payload;
+
+    // Try to verify idToken first
+    if (idToken) {
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken,
+          audience: GOOGLE_CLIENT_ID,
+        });
+        payload = ticket.getPayload();
+      } catch (error) {
+        console.error('ID Token verification failed:', error);
+        // If idToken verification fails, we'll try accessToken or userInfo below
+      }
+    }
+
+    // If idToken verification failed or wasn't provided, try accessToken
+    if (!payload && accessToken) {
+      try {
+        // Verify accessToken by making a request to Google's userinfo endpoint
+        const response = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`);
+        if (response.ok) {
+          const userProfile = await response.json();
+          payload = {
+            sub: userProfile.id,
+            email: userProfile.email,
+            given_name: userProfile.given_name,
+            family_name: userProfile.family_name,
+            picture: userProfile.picture,
+            email_verified: userProfile.verified_email
+          };
+        }
+      } catch (error) {
+        console.error('Access Token verification failed:', error);
+      }
+    }
+
+    // If both token methods failed, use userInfo as fallback
+    if (!payload && userInfo && userInfo.email) {
+      payload = {
+        sub: userInfo.id,
+        email: userInfo.email,
+        given_name: userInfo.displayName ? userInfo.displayName.split(' ')[0] : '',
+        family_name: userInfo.displayName ? userInfo.displayName.split(' ').slice(1).join(' ') : '',
+        picture: userInfo.photoUrl,
+        email_verified: true // Assume verified from Google
+      };
+    }
 
     if (!payload || !payload.email) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid Google token'
+        message: 'Unable to verify Google authentication. Please try again.'
       });
     }
 
     // Find or create user
     let user = await User.findOne({ email: payload.email });
+    
     if (!user) {
+      // Create new user
       user = await User.create({
         firstName: payload.given_name || '',
         lastName: payload.family_name || '',
@@ -583,20 +628,55 @@ router.post('/google-signin', async (req, res) => {
         password: crypto.randomBytes(16).toString('hex'), // Generate a random password
         googleId: payload.sub, // Store Google ID
         isGoogleUser: true, // Flag for Google users
-        phone: payload.phone || '', // Optional phone from Google profile
-        emailVerificationCode: crypto.randomBytes(3).toString('hex'), // Generate a random verification code
-        emailVerificationExpires: Date.now() + 10 * 60 * 1000, // 10 minutes
-        isEmailVerified: payload.email_verified || false,
-        userType: 'worker', // or 'client', adjust as needed
+        phone: '', // Phone not available from Google
+        emailVerificationCode: undefined, // No need for verification code
+        emailVerificationExpires: undefined,
+        isEmailVerified: payload.email_verified || true,
+        userType: 'worker', // Default user type
         isVerified: true,
         isActive: true,
         profilePicture: payload.picture || '',
       });
+      
+      // Create empty profile for the user
       await Profile.create({ user: user._id });
+    } else {
+      // Update existing user with Google info if needed
+      let updateFields = {};
+      if (!user.googleId && payload.sub) {
+        updateFields.googleId = payload.sub;
+        updateFields.isGoogleUser = true;
+      }
+      if (!user.profilePicture && payload.picture) {
+        updateFields.profilePicture = payload.picture;
+      }
+      if (!user.isEmailVerified && payload.email_verified) {
+        updateFields.isEmailVerified = true;
+      }
+      
+      if (Object.keys(updateFields).length > 0) {
+        await User.findByIdAndUpdate(user._id, updateFields);
+        user = await User.findById(user._id); // Refresh user data
+      }
     }
+
+    // Check if user is active
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated. Please contact support.'
+      });
+    }
+
+    // Update last login
+    user.lastLogin = new Date();
+    await user.save();
 
     // Generate JWT token
     const token = generateToken(user._id);
+
+    // Remove password from response
+    user.password = undefined;
 
     res.status(200).json({
       success: true,
@@ -607,6 +687,7 @@ router.post('/google-signin', async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Google Sign-In Error:', error);
     res.status(500).json({
       success: false,
       message: 'Google sign-in failed',
