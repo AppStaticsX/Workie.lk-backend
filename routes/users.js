@@ -110,13 +110,26 @@ router.put('/:id', auth, async (req, res) => {
       });
     }
 
+
     const allowedFields = ['firstName', 'lastName', 'phone', 'profilePicture', 'address'];
     const updateData = {};
 
     // Only allow certain fields to be updated
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
+        // Special handling for address to map fields
+        if (field === 'address' && typeof req.body.address === 'object' && req.body.address !== null) {
+          // Map frontend address fields to backend User model fields
+          updateData.address = {
+            street: req.body.address.streetAddress || req.body.address.street || '',
+            city: req.body.address.city || '',
+            state: req.body.address.stateOrProvince || req.body.address.state || '',
+            zipCode: req.body.address.postalCode || req.body.address.zipCode || '',
+            country: req.body.address.country || 'Sri Lanka'
+          };
+        } else {
+          updateData[field] = req.body[field];
+        }
       }
     });
 
