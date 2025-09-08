@@ -6,6 +6,138 @@ const { validateProfile } = require('../middleware/validation');
 
 const router = express.Router();
 
+// @route   GET /api/profiles/search
+// @desc    Search profiles by criteria (both workers and clients)
+// @access  Public
+router.get('/search', async (req, res) => {
+  try {
+    const {
+      skills,
+      city,
+      minRating = 0,
+      availability,
+      experienceLevel,
+      category,
+      userType, // Can be 'worker', 'client', or 'both'
+      page = 1,
+      limit = 10
+    } = req.query;
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Build aggregation pipeline
+    const pipeline = [
+      // Lookup user data
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'userInfo'
+        }
+      },
+      {
+        $unwind: '$userInfo'
+      }
+    ];
+
+    // Match stage for user type and active status
+    const userMatchStage = {
+      'userInfo.isActive': true
+    };
+
+    // Add userType filter based on parameter
+    if (userType && userType !== 'both') {
+      userMatchStage['userInfo.userType'] = userType;
+    }
+    // If userType is 'both' or not specified, include both workers and clients
+
+    pipeline.push({ $match: userMatchStage });
+
+    // Add filters
+    const matchStage = {};
+
+    if (skills) {
+      const skillsArray = skills.split(',').map(skill => skill.trim());
+      matchStage['skills.name'] = { $in: skillsArray.map(skill => new RegExp(skill, 'i')) };
+    }
+
+    if (city) {
+      matchStage['userInfo.address.city'] = new RegExp(city, 'i');
+    }
+
+    if (minRating) {
+      matchStage['ratings.average'] = { $gte: parseFloat(minRating) };
+    }
+
+    if (availability) {
+      matchStage['availability.status'] = availability;
+    }
+
+    if (category) {
+      matchStage['preferences.jobTypes'] = category;
+    }
+
+    if (Object.keys(matchStage).length > 0) {
+      pipeline.push({ $match: matchStage });
+    }
+
+    // Add pagination and sorting
+    pipeline.push(
+      { $sort: { 'ratings.average': -1, completedJobs: -1 } },
+      { $skip: skip },
+      { $limit: limitNum }
+    );
+
+    // Project only needed fields
+    pipeline.push({
+      $project: {
+        bio: 1,
+        skills: 1,
+        ratings: 1,
+        completedJobs: 1,
+        availability: 1,
+        portfolio: 1,
+        'userInfo.firstName': 1,
+        'userInfo.lastName': 1,
+        'userInfo.profilePicture': 1,
+        'userInfo.address': 1,
+        'userInfo.userType': 1,
+        'userInfo.createdAt': 1
+      }
+    });
+
+    const profiles = await Profile.aggregate(pipeline);
+
+    // Get total count
+    const countPipeline = pipeline.slice(0, -3); // Remove sort, skip, limit, and project
+    countPipeline.push({ $count: 'total' });
+    const countResult = await Profile.aggregate(countPipeline);
+    const total = countResult.length > 0 ? countResult[0].total : 0;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        profiles,
+        pagination: {
+          current: pageNum,
+          pages: Math.ceil(total / limitNum),
+          total,
+          limit: limitNum
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
 // @route   GET /api/profiles/:userId
 // @desc    Get user profile by user ID
 // @access  Public

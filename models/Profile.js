@@ -175,21 +175,20 @@ const profileSchema = new mongoose.Schema({
   workerCategories: [{
     type: String
   }],
+  dateOfBirth: {
+    type: Date
+  },
   age: {
     type: Number,
     min: 18,
     max: 100
   },
-  country: String?? 'Sri Lanka',
+  country: String,
   streetAddress: String,
-  dateOfBirth: {
-    type: Date
-  },
   city: String,
-  province: String, // Added for province/state info
+  province: String,
   postalCode: String,
   workLocation: String,
-
   preferredWorkAreas: String,
   currentCompany: String,
   phone: String,

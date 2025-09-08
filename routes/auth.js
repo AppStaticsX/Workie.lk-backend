@@ -735,10 +735,12 @@ router.post('/worker-verification', auth, async (req, res) => {
       skills,
       experience,
       bio,
+      dateOfBirth,
       age,
       country,
       streetAddress,
       city,
+      province,
       postalCode,
       location,
       address,
@@ -747,14 +749,15 @@ router.post('/worker-verification', auth, async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!categories || !bio || !age || !country || !streetAddress || !city || !postalCode || !location || !address || !phone) {
+    if (!categories || !bio || !dateOfBirth || !country || !streetAddress || !city || !province || !postalCode || !location || !address || !phone) {
       const missingFields = [];
       if (!categories) missingFields.push('categories');
       if (!bio) missingFields.push('bio');
-      if (!age) missingFields.push('age');
+      if (!dateOfBirth) missingFields.push('dateOfBirth');
       if (!country) missingFields.push('country');
       if (!streetAddress) missingFields.push('streetAddress');
       if (!city) missingFields.push('city');
+      if (!province) missingFields.push('province');
       if (!postalCode) missingFields.push('postalCode');
       if (!location) missingFields.push('location');
       if (!address) missingFields.push('address');
@@ -764,6 +767,31 @@ router.post('/worker-verification', auth, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `Missing required fields: ${missingFields.join(', ')}`
+      });
+    }
+    
+    // Function to calculate age from date of birth
+    const calculateAge = (dateOfBirth) => {
+      const today = new Date();
+      const birthDate = new Date(dateOfBirth);
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      
+      return age;
+    };
+    
+    // Calculate age from date of birth
+    const calculatedAge = calculateAge(dateOfBirth);
+    
+    // Validate age
+    if (calculatedAge < 18 || calculatedAge > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Age must be between 18 and 100 years old'
       });
     }
 
@@ -825,10 +853,12 @@ router.post('/worker-verification', auth, async (req, res) => {
     }
     
     profile.bio = bio;
-    profile.age = parseInt(age);
+    profile.dateOfBirth = new Date(dateOfBirth);
+    profile.age = calculatedAge;
     profile.country = country;
     profile.streetAddress = streetAddress;
     profile.city = city;
+    profile.province = province;
     profile.postalCode = postalCode;
     profile.workLocation = location;
     profile.preferredWorkAreas = address;
@@ -884,9 +914,11 @@ router.post('/worker-verification', auth, async (req, res) => {
           id: profile._id,
           workerCategories: profile.workerCategories,
           bio: profile.bio,
+          dateOfBirth: profile.dateOfBirth,
           age: profile.age,
           country: profile.country,
           city: profile.city,
+          province: profile.province,
           workLocation: profile.workLocation,
           isWorkerVerificationSubmitted: profile.isWorkerVerificationSubmitted,
           workerVerificationStatus: profile.workerVerificationStatus,
