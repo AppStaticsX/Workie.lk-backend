@@ -83,6 +83,7 @@ const userSchema = new mongoose.Schema({
   address: {
     street: String,
     city: String,
+    apartment: String, // Added for apartment/suite
     state: String,
     zipCode: String,
     country: { type: String, default: 'Sri Lanka' }
