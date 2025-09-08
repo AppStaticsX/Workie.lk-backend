@@ -111,59 +111,40 @@ router.put('/:id', auth, async (req, res) => {
     }
 
 
-    const allowedFields = ['firstName', 'lastName', 'phone', 'profilePicture', 'address'];
-    const updateData = {};
-
-    // Only allow certain fields to be updated
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        // Special handling for address to map fields
-        if (field === 'address' && typeof req.body.address === 'object' && req.body.address !== null) {
-          // Map frontend address fields to backend User model fields
-          updateData.address = {
-            street: req.body.address.streetAddress || req.body.address.street || '',
-            city: req.body.address.city || '',
-            apartment: req.body.address.apartmentOrSuite || req.body.address.apartment || '',
-            state: req.body.address.stateOrProvince || req.body.address.state || '',
-            zipCode: req.body.address.postalCode || req.body.address.zipCode || '',
-            country: req.body.address.country || 'Sri Lanka'
-          };
-        } else {
-          updateData[field] = req.body[field];
-        }
-      }
-    });
-
-    // Admin can update additional fields
+    // Only allow admin to update userType, isActive, isVerified
     if (req.user.userType === 'admin') {
       const adminFields = ['userType', 'isActive', 'isVerified'];
+      const updateData = {};
       adminFields.forEach(field => {
         if (req.body[field] !== undefined) {
           updateData[field] = req.body[field];
         }
       });
-    }
-
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      {
-        new: true,
-        runValidators: true
+      const user = await User.findByIdAndUpdate(
+        req.params.id,
+        updateData,
+        {
+          new: true,
+          runValidators: true
+        }
+      ).select('-password');
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
       }
-    ).select('-password');
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found'
+      return res.status(200).json({
+        success: true,
+        message: 'User updated successfully',
+        data: user
       });
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'User updated successfully',
-      data: user
+    // For normal users, do not update personal details here (handled in profiles collection)
+    return res.status(403).json({
+      success: false,
+      message: 'Personal details can only be updated via the profile route.'
     });
   } catch (error) {
     res.status(500).json({
