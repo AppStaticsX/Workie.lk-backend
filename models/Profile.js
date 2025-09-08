@@ -180,7 +180,7 @@ const profileSchema = new mongoose.Schema({
     min: 18,
     max: 100
   },
-  country: String,
+  country: String?? 'Sri Lanka',
   streetAddress: String,
   dateOfBirth: {
     type: Date
@@ -189,6 +189,7 @@ const profileSchema = new mongoose.Schema({
   province: String, // Added for province/state info
   postalCode: String,
   workLocation: String,
+
   preferredWorkAreas: String,
   currentCompany: String,
   phone: String,
