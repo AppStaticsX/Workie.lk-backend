@@ -123,7 +123,7 @@ router.put('/:id', auth, async (req, res) => {
           updateData.address = {
             street: req.body.address.streetAddress || req.body.address.street || '',
             city: req.body.address.city || '',
-            apartment: req.body.address.apartmentOrSuite || '',
+            apartment: req.body.address.apartmentOrSuite || req.body.address.apartment || '',
             state: req.body.address.stateOrProvince || req.body.address.state || '',
             zipCode: req.body.address.postalCode || req.body.address.zipCode || '',
             country: req.body.address.country || 'Sri Lanka'
