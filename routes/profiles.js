@@ -49,17 +49,25 @@ router.put('/:userId', auth, validateProfile, async (req, res) => {
 
     let profile = await Profile.findOne({ user: req.params.userId });
 
+    // Only update personal_info and address fields (not profile picture)
+    const { personalInfo, address, isProfileComplete, profileCompletedAt } = req.body;
+    const updateFields = {};
+    if (personalInfo) updateFields['personal_info'] = personalInfo;
+    if (address) updateFields['address'] = address;
+    if (isProfileComplete !== undefined) updateFields['isProfileComplete'] = isProfileComplete;
+    if (profileCompletedAt !== undefined) updateFields['profileCompletedAt'] = profileCompletedAt;
+
     if (!profile) {
       // Create profile if it doesn't exist
       profile = await Profile.create({
         user: req.params.userId,
-        ...req.body
+        ...updateFields
       });
     } else {
       // Update existing profile
       profile = await Profile.findOneAndUpdate(
         { user: req.params.userId },
-        req.body,
+        updateFields,
         {
           new: true,
           runValidators: true
