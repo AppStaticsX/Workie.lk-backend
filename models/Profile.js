@@ -182,6 +182,7 @@ const profileSchema = new mongoose.Schema({
   },
   country: String,
   streetAddress: String,
+  dateofBirth: Date,
   city: String,
   province: String, // Added for province/state info
   postalCode: String,
