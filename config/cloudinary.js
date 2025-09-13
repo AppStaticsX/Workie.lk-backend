@@ -71,6 +71,56 @@ const portfolioStorage = new CloudinaryStorage({
   },
 });
 
+// Post Media Storage (Images and Videos for posts)
+const postMediaStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: (req, file) => {
+    const userId = req.user?._id || req.body.userId || 'unknown';
+    const fileType = file.mimetype.startsWith('video/') ? 'videos' : 'images';
+    
+    return {
+      folder: `workie-lk/posts/${userId}/${fileType}`,
+      allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'webm'],
+      resource_type: 'auto', // Automatically detect if it's image or video
+      transformation: file.mimetype.startsWith('video/') 
+        ? [
+            { quality: 'auto' },
+            { video_codec: 'auto' }
+          ]
+        : [
+            { width: 1080, height: 1080, crop: 'limit' },
+            { quality: 'auto', fetch_format: 'auto' }
+          ],
+    };
+  },
+});
+
+// Single File Storage (flexible for any post file)
+const singleFileStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: (req, file) => {
+    const userId = req.user?._id || req.body.userId || 'unknown';
+    const fileType = req.body.fileType || (file.mimetype.startsWith('video/') ? 'videos' : 'images');
+    const folder = req.body.folder || `workie-lk/posts/${userId}/${fileType}`;
+    
+    return {
+      folder: folder,
+      allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'avi', 'webm'],
+      resource_type: 'auto',
+      transformation: file.mimetype.startsWith('video/') 
+        ? [
+            { quality: 'auto' },
+            { video_codec: 'auto' },
+            { duration: '30' } // Limit video duration to 30 seconds for posts
+          ]
+        : [
+            { width: 1080, height: 1080, crop: 'limit' },
+            { quality: 'auto', fetch_format: 'auto' }
+          ],
+    };
+  },
+});
+
 // Job Images Storage
 const jobImageStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
@@ -121,6 +171,43 @@ const uploadPortfolio = multer({
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB limit for videos
   },
+});
+
+// Post Media Upload (multiple files for posts)
+const uploadPostMedia = multer({
+  storage: postMediaStorage,
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB limit for post videos
+    files: 5, // Maximum 5 files per post
+  },
+  fileFilter: (req, file, cb) => {
+    console.log('📁 File filter check:', file.mimetype);
+    
+    // Allow images and videos
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and videos are allowed for posts'), false);
+    }
+  }
+});
+
+// Single File Upload (flexible for any post file)
+const uploadSingleFile = multer({
+  storage: singleFileStorage,
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    console.log('📁 Single file filter check:', file.mimetype);
+    
+    // Allow images and videos
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and videos are allowed'), false);
+    }
+  }
 });
 
 const uploadJobImage = multer({
@@ -187,10 +274,12 @@ module.exports = {
   uploadCoverPhoto,
   uploadVerificationDoc,
   uploadPortfolio,
+  uploadPostMedia,        // New: For multiple post files
+  uploadSingleFile,       // New: For single post files
   uploadJobImage,
   uploadDocument,
   deleteFile,
   deleteVideo,
   generateOptimizedUrl,
-  generateVideoThumbnail,
+  generateVideoThumbnail
 };

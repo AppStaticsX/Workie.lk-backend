@@ -1,11 +1,18 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const logger = require('../utils/logger');
 
 const auth = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
     
     if (!token) {
+      logger.warn('Authentication failed: No token provided', { 
+        ip: req.ip || req.connection.remoteAddress, 
+        userAgent: req.get('User-Agent'),
+        url: req.url,
+        requestId: req.requestId
+      });
       return res.status(401).json({
         success: false,
         message: 'Access denied. No token provided.'
@@ -16,6 +23,11 @@ const auth = async (req, res, next) => {
     const user = await User.findById(decoded.id).select('-password');
     
     if (!user) {
+      logger.warn('Authentication failed: User not found', { 
+        tokenId: decoded.id,
+        ip: req.ip || req.connection.remoteAddress,
+        requestId: req.requestId
+      });
       return res.status(401).json({
         success: false,
         message: 'Invalid token. User not found.'
@@ -23,6 +35,12 @@ const auth = async (req, res, next) => {
     }
 
     if (!user.isActive) {
+      logger.warn('Authentication failed: Account deactivated', { 
+        userId: user._id,
+        email: user.email,
+        ip: req.ip || req.connection.remoteAddress,
+        requestId: req.requestId
+      });
       return res.status(401).json({
         success: false,
         message: 'Account is deactivated.'
@@ -32,6 +50,14 @@ const auth = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
+    logger.error('Authentication error', {
+      error: error.message,
+      stack: error.stack,
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+      requestId: req.requestId
+    });
+
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
@@ -56,6 +82,12 @@ const auth = async (req, res, next) => {
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
+      logger.warn('Authorization failed: No authenticated user', {
+        requiredRoles: roles,
+        url: req.url,
+        method: req.method,
+        requestId: req.requestId
+      });
       return res.status(401).json({
         success: false,
         message: 'Authentication required.'
@@ -63,6 +95,14 @@ const authorize = (...roles) => {
     }
 
     if (!roles.includes(req.user.userType)) {
+      logger.warn('Authorization failed: Insufficient permissions', {
+        userId: req.user._id,
+        userType: req.user.userType,
+        requiredRoles: roles,
+        url: req.url,
+        method: req.method,
+        requestId: req.requestId
+      });
       return res.status(403).json({
         success: false,
         message: 'Access denied. Insufficient permissions.'
@@ -81,6 +121,12 @@ const checkOwnership = (Model, paramName = 'id', userField = 'user') => {
       const resource = await Model.findById(resourceId);
 
       if (!resource) {
+        logger.warn('Ownership check failed: Resource not found', {
+          resourceId,
+          model: Model.modelName,
+          userId: req.user._id,
+          requestId: req.requestId
+        });
         return res.status(404).json({
           success: false,
           message: 'Resource not found.'
@@ -89,6 +135,14 @@ const checkOwnership = (Model, paramName = 'id', userField = 'user') => {
 
       // Check if user owns the resource or is admin
       if (resource[userField].toString() !== req.user._id.toString() && req.user.userType !== 'admin') {
+        logger.warn('Ownership check failed: Access denied', {
+          resourceId,
+          resourceOwner: resource[userField],
+          userId: req.user._id,
+          userType: req.user.userType,
+          model: Model.modelName,
+          requestId: req.requestId
+        });
         return res.status(403).json({
           success: false,
           message: 'Access denied. You can only access your own resources.'
@@ -98,6 +152,14 @@ const checkOwnership = (Model, paramName = 'id', userField = 'user') => {
       req.resource = resource;
       next();
     } catch (error) {
+      logger.error('Ownership check error', {
+        error: error.message,
+        stack: error.stack,
+        resourceId: req.params[paramName],
+        model: Model.modelName,
+        userId: req.user._id,
+        requestId: req.requestId
+      });
       res.status(500).json({
         success: false,
         message: 'Error checking resource ownership.'

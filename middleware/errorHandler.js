@@ -1,9 +1,25 @@
+const logger = require('../utils/logger');
+
 const errorHandler = (err, req, res, next) => {
   let error = { ...err };
   error.message = err.message;
 
-  // Log error
-  console.error('Error:', err);
+  // Enhanced error logging with context
+  logger.error('Request error', {
+    error: err.message,
+    stack: err.stack,
+    name: err.name,
+    code: err.code,
+    url: req.url,
+    method: req.method,
+    ip: req.ip || req.connection.remoteAddress,
+    userAgent: req.get('User-Agent'),
+    requestId: req.requestId,
+    userId: req.user ? req.user._id : 'anonymous',
+    body: req.method === 'POST' || req.method === 'PUT' ? req.body : undefined,
+    params: req.params,
+    query: req.query
+  });
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {

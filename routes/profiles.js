@@ -100,6 +100,7 @@ router.get('/search', async (req, res) => {
         completedJobs: 1,
         availability: 1,
         portfolio: 1,
+        'userInfo._id': 1, // Include user ID
         'userInfo.firstName': 1,
         'userInfo.lastName': 1,
         'userInfo.profilePicture': 1,
@@ -144,7 +145,7 @@ router.get('/search', async (req, res) => {
 router.get('/:userId', async (req, res) => {
   try {
     const profile = await Profile.findOne({ user: req.params.userId })
-      .populate('user', 'firstName lastName profilePicture userType createdAt isVerified');
+      .populate('user', 'firstName lastName profilePicture coverPhoto userType phone address createdAt isVerified email');
 
     if (!profile) {
       return res.status(404).json({
@@ -155,7 +156,10 @@ router.get('/:userId', async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: profile
+      data: {
+        user: profile.user,
+        profile: profile
+      }
     });
   } catch (error) {
     res.status(500).json({

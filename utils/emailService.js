@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const logger = require('./logger');
 
 // Create transporter
 const createTransporter = () => {
@@ -25,10 +26,18 @@ const sendEmail = async (options) => {
     await new Promise((resolve, reject) => {
       transporter.verify(function (error, success) {
         if (error) {
-          console.log('Transporter verification error:', error);
+          logger.error('Transporter verification error', {
+            error: error.message,
+            stack: error.stack,
+            emailConfig: {
+              host: 'smtp.gmail.com',
+              port: 587,
+              user: process.env.EMAIL_USER ? '***configured***' : 'missing'
+            }
+          });
           reject(error);
         } else {
-          console.log('Server is ready to take our messages');
+          logger.info('Email server ready to send messages');
           resolve(success);
         }
       });
@@ -43,10 +52,22 @@ const sendEmail = async (options) => {
     };
 
     const result = await transporter.sendMail(mailOptions);
-    console.log('Email sent successfully:', result.messageId);
+    logger.info('Email sent successfully', {
+      messageId: result.messageId,
+      to: options.to,
+      subject: options.subject,
+      response: result.response
+    });
     return result;
   } catch (error) {
-    console.error('Detailed email error:', error);
+    logger.error('Email sending failed', {
+      error: error.message,
+      stack: error.stack,
+      to: options.to,
+      subject: options.subject,
+      code: error.code,
+      command: error.command
+    });
     throw error;
   }
 };

@@ -745,7 +745,10 @@ router.post('/worker-verification', auth, async (req, res) => {
       location,
       address,
       companyName,
-      phone
+      phone,
+      profilePhotoUrl,
+      idPhotoFrontUrl,
+      idPhotoBackUrl
     } = req.body;
 
     // Validate required fields
@@ -864,6 +867,18 @@ router.post('/worker-verification', auth, async (req, res) => {
     profile.preferredWorkAreas = address;
     profile.currentCompany = companyName;
     profile.phone = phone;
+    
+    // Store uploaded photo URLs if provided
+    if (profilePhotoUrl) {
+      profile.profilePicture = profilePhotoUrl;
+    }
+    if (idPhotoFrontUrl) {
+      profile.idPhotoFront = idPhotoFrontUrl;
+    }
+    if (idPhotoBackUrl) {
+      profile.idPhotoBack = idPhotoBackUrl;
+    }
+    
     profile.isWorkerVerificationSubmitted = true;
     profile.workerVerificationStatus = 'pending';
     profile.workerVerificationSubmittedAt = new Date();

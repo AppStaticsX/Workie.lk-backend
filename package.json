@@ -5,9 +5,17 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
+    "dev": "cross-env NODE_ENV=development nodemon server.js",
+    "dev:debug": "cross-env NODE_ENV=development DEBUG=* nodemon server.js",
+    "dev:windows": "set NODE_ENV=development && nodemon server.js",
+    "prod": "cross-env NODE_ENV=production node server.js",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "logs": "type logs\\app.log 2>nul || cat logs/app.log 2>/dev/null || echo No logs found",
+    "logs:error": "type logs\\error.log 2>nul || cat logs/error.log 2>/dev/null || echo No error logs found",
+    "logs:crash": "type logs\\crashes.log 2>nul || cat logs/crashes.log 2>/dev/null || echo No crash logs found",
+    "clean:logs": "if exist logs rmdir /s /q logs && mkdir logs || rm -rf logs && mkdir logs",
+    "health": "curl http://localhost:5000/api/health || echo Health check failed"
   },
   "keywords": [
     "job",
@@ -38,6 +46,7 @@
     "nodemailer": "^6.9.4"
   },
   "devDependencies": {
+    "cross-env": "^10.0.0",
     "jest": "^29.6.2",
     "nodemon": "^3.1.10",
     "supertest": "^6.3.3"
