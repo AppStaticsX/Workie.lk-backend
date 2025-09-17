@@ -3,6 +3,7 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
 const Post = require('../models/Post'); // Import the Post model
+const { deleteFile, deleteVideo } = require('../config/cloudinary');
 
 // Create a new post
 router.post('/', auth, async (req, res) => {
@@ -163,6 +164,21 @@ router.get('/videos', async (req, res) => {
     console.log('🎥 Video endpoint hit!');
     console.log('📝 Query params:', req.query);
     
+    // Optional authentication - get user ID if logged in
+    let currentUserId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const jwt = require('jsonwebtoken');
+        const token = authHeader.substring(7);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        currentUserId = decoded.id;
+        console.log('👤 Authenticated user:', currentUserId);
+      } catch (authError) {
+        console.log('🔓 No valid authentication, proceeding as guest');
+      }
+    }
+    
     const { page = 1, limit = 10 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -195,15 +211,28 @@ router.get('/videos', async (req, res) => {
     // Transform posts for video feed
     const videoPosts = posts.map(post => {
       const videoMedia = post.media.find(m => m.fileType === 'video');
+      
+      // Check if current user liked this post
+      const userLiked = currentUserId ? 
+        post.likes.some(like => like.userId.toString() === currentUserId.toString()) : 
+        false;
+      
+      // Use populated userId data first, fallback to userInfo
+      const userInfo = post.userId || post.userInfo;
+      const creatorName = userInfo ? 
+        `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim() || 'Unknown User' :
+        'Unknown User';
+      
       return {
         id: post._id,
+        _id: post._id, // Include both for compatibility
         title: post.content ? post.content.substring(0, 100) + (post.content.length > 100 ? '...' : '') : 'Video Post',
         description: post.content || 'No description available',
-        creator: `${post.userInfo.firstName} ${post.userInfo.lastName}`,
-        avatar: post.userInfo.profilePicture || '',
+        creator: creatorName,
+        avatar: userInfo?.profilePicture || '',
         verified: false, // You can add verification logic here
-        likes: post.likes.length,
-        comments: post.comments.length,
+        likes: post.likes ? post.likes.length : 0,
+        comments: post.comments ? post.comments.length : 0,
         views: `${Math.floor(Math.random() * 50)}K`, // You can implement actual view tracking
         duration: "0:00", // You can store actual duration in media object
         category: "General", // You can add category field to posts
@@ -211,7 +240,9 @@ router.get('/videos', async (req, res) => {
         videoUrl: videoMedia ? videoMedia.url : '',
         createdAt: post.createdAt,
         location: post.location || '',
-        userId: post.userId._id
+        userId: userInfo?._id || post.userId,
+        isLiked: userLiked, // Include user like status
+        profession: userInfo?.profession || 'Worker'
       };
     });
 
@@ -277,30 +308,64 @@ router.get('/:postId', auth, async (req, res) => {
 router.delete('/:postId', auth, async (req, res) => {
   try {
     const { postId } = req.params;
+    
+    console.log('🗑️ Deleting post:', postId);
+    console.log('👤 User requesting deletion:', req.user._id);
 
-    // TODO: Implement when Post model is created
-    // const post = await Post.findById(postId);
-    // 
-    // if (!post) {
-    //   return res.status(404).json({
-    //     success: false,
-    //     message: 'Post not found'
-    //   });
-    // }
-    //
-    // // Check if user owns the post
-    // if (post.userId.toString() !== req.user._id.toString()) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: 'Not authorized to delete this post'
-    //   });
-    // }
-    //
-    // await Post.findByIdAndDelete(postId);
+    // Find the post
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      console.log('❌ Post not found:', postId);
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found'
+      });
+    }
+
+    console.log('📝 Post found, owner:', post.userId);
+    
+    // Check if user owns the post
+    if (post.userId.toString() !== req.user._id.toString()) {
+      console.log('❌ User not authorized to delete post');
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete this post'
+      });
+    }
+
+    // Delete media from Cloudinary if exists
+    if (post.media && post.media.length > 0) {
+      console.log('🗑️ Deleting media from Cloudinary...');
+      
+      for (const media of post.media) {
+        if (media.publicId) {
+          try {
+            if (media.fileType === 'video') {
+              await deleteVideo(media.publicId);
+              console.log(`✅ Deleted video ${media.fileName} from Cloudinary`);
+            } else {
+              await deleteFile(media.publicId);
+              console.log(`✅ Deleted file ${media.fileName} from Cloudinary`);
+            }
+          } catch (error) {
+            console.warn(`⚠️ Failed to delete ${media.fileName} from Cloudinary:`, error);
+            // Continue with post deletion even if media deletion fails
+          }
+        }
+      }
+    }
+
+    // Delete the post from database
+    await Post.findByIdAndDelete(postId);
+    console.log('✅ Post deleted successfully from database');
 
     res.json({
       success: true,
-      message: 'Post deleted successfully'
+      message: 'Post deleted successfully',
+      data: {
+        deletedPostId: postId
+      }
     });
 
   } catch (error) {
@@ -319,30 +384,63 @@ router.post('/:postId/like', auth, async (req, res) => {
     const { postId } = req.params;
     const userId = req.user._id;
 
-    // TODO: Implement when Post model is created
-    // const post = await Post.findById(postId);
-    // 
-    // if (!post) {
-    //   return res.status(404).json({
-    //     success: false,
-    //     message: 'Post not found'
-    //   });
-    // }
-    //
-    // const likeIndex = post.likes.indexOf(userId);
-    // if (likeIndex > -1) {
-    //   // Unlike
-    //   post.likes.splice(likeIndex, 1);
-    // } else {
-    //   // Like
-    //   post.likes.push(userId);
-    // }
-    //
-    // await post.save();
+    console.log('👍 Like request:', { postId, userId });
+
+    // Find the post
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found'
+      });
+    }
+
+    // Check if user already liked the post
+    const likeIndex = post.likes.findIndex(like => like.userId.toString() === userId.toString());
+    let isLiked = false;
+    
+    if (likeIndex > -1) {
+      // Unlike - remove user from likes array
+      post.likes.splice(likeIndex, 1);
+      console.log('👎 Post unliked');
+    } else {
+      // Like - add user to likes array
+      post.likes.push({
+        userId: userId,
+        likedAt: new Date()
+      });
+      isLiked = true;
+      console.log('👍 Post liked');
+      
+      // Send notification to post owner (if not liking own post)
+      if (post.userId.toString() !== userId.toString()) {
+        try {
+          const NotificationService = require('../services/notificationService');
+          await NotificationService.notifyLike(
+            post._id,
+            post.userId,
+            userId,
+            post.content?.substring(0, 50) || 'a post'
+          );
+        } catch (notificationError) {
+          console.warn('Failed to send like notification:', notificationError);
+        }
+      }
+    }
+
+    // Save the updated post
+    await post.save();
 
     res.json({
       success: true,
-      message: 'Like toggled successfully'
+      message: isLiked ? 'Post liked successfully' : 'Post unliked successfully',
+      data: {
+        postId: post._id,
+        isLiked,
+        likesCount: post.likes.length,
+        likes: post.likes
+      }
     });
 
   } catch (error) {

@@ -22,7 +22,12 @@ const notificationSchema = new mongoose.Schema({
       'message_received',
       'job_reminder',
       'profile_view',
-      'system_update'
+      'system_update',
+      'like',
+      'comment',
+      'connection_request',
+      'post_like',
+      'post_comment'
     ],
     required: true
   },
