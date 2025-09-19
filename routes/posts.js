@@ -272,6 +272,62 @@ router.get('/videos', async (req, res) => {
   }
 });
 
+// Search posts by content (MOVE THIS BEFORE /:postId route)
+router.get('/search', async (req, res) => {
+  try {
+    const { content, page = 1, limit = 10 } = req.query;
+
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    console.log('🔍 Searching posts for:', content);
+
+    // Search posts by content using regex for partial matches
+    const searchRegex = new RegExp(content.trim(), 'i'); // Case insensitive search
+    
+    const posts = await Post.find({
+      content: { $regex: searchRegex },
+      privacy: { $in: ['public'] } // Only search public posts
+    })
+    .populate('userId', 'firstName lastName profilePicture email role')
+    .populate('taggedUsers', 'firstName lastName profilePicture')
+    .sort({ createdAt: -1 })
+    .limit(parseInt(limit))
+    .skip((parseInt(page) - 1) * parseInt(limit))
+    .lean();
+
+    const totalResults = await Post.countDocuments({
+      content: { $regex: searchRegex },
+      privacy: { $in: ['public'] }
+    });
+
+    console.log(`✅ Found ${posts.length} posts matching "${content}"`);
+
+    res.json({
+      success: true,
+      data: posts,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalResults,
+        pages: Math.ceil(totalResults / parseInt(limit))
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error searching posts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error searching posts',
+      error: error.message
+    });
+  }
+});
+
 // Get single post
 router.get('/:postId', auth, async (req, res) => {
   try {
