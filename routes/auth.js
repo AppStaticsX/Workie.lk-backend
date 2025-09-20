@@ -734,6 +734,7 @@ router.post('/worker-verification', auth, async (req, res) => {
       categories,
       skills,
       experience,
+      title,
       bio,
       dateOfBirth,
       age,
@@ -752,9 +753,10 @@ router.post('/worker-verification', auth, async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!categories || !bio || !dateOfBirth || !country || !streetAddress || !city || !province || !postalCode || !location || !address || !phone) {
+    if (!categories || !title || !bio || !dateOfBirth || !country || !streetAddress || !city || !province || !postalCode || !location || !address || !phone) {
       const missingFields = [];
       if (!categories) missingFields.push('categories');
+      if (!title) missingFields.push('title');
       if (!bio) missingFields.push('bio');
       if (!dateOfBirth) missingFields.push('dateOfBirth');
       if (!country) missingFields.push('country');
@@ -856,6 +858,7 @@ router.post('/worker-verification', auth, async (req, res) => {
     }
     
     profile.bio = bio;
+    profile.title = title;
     profile.dateOfBirth = new Date(dateOfBirth);
     profile.age = calculatedAge;
     profile.country = country;

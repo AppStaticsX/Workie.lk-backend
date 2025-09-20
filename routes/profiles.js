@@ -95,6 +95,7 @@ router.get('/search', async (req, res) => {
     pipeline.push({
       $project: {
         bio: 1,
+        title: 1,
         skills: 1,
         ratings: 1,
         completedJobs: 1,
