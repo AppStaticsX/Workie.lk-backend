@@ -10,7 +10,8 @@ const postSchema = new mongoose.Schema({
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     email: { type: String, required: true },
-    profilePicture: { type: String, default: '' }
+    profilePicture: { type: String, default: '' },
+    title: { type: String, default: '' }
   },
   content: {
     type: String,

@@ -3,6 +3,7 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
 const Post = require('../models/Post'); // Import the Post model
+const Profile = require('../models/Profile'); // Import the Profile model
 const { deleteFile, deleteVideo } = require('../config/cloudinary');
 
 // Create a new post
@@ -39,9 +40,14 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
+    // Get user profile to fetch title
+    const profile = await Profile.findOne({ user: req.user._id }).select('title');
+    const profileTitle = profile ? profile.title : '';
+
     console.log('👤 User found:', {
       id: user._id,
-      name: `${user.firstName} ${user.lastName}`
+      name: `${user.firstName} ${user.lastName}`,
+      title: profileTitle
     });
 
     // Create post object
@@ -51,7 +57,8 @@ router.post('/', auth, async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        profilePicture: user.profilePicture
+        profilePicture: user.profilePicture,
+        title: profileTitle
       },
       content: content || '',
       media: media || [],
