@@ -214,8 +214,10 @@ router.post('/login', validateLogin, async (req, res) => {
       });
     }
 
-    // Update last login
+    // Update last login and set online status
     user.lastLogin = new Date();
+    user.lastActivity = new Date();
+    user.isOnline = true;
     await user.save();
 
     // Generate token

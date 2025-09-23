@@ -91,6 +91,14 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  lastActivity: {
+    type: Date,
+    default: Date.now
+  },
+  isOnline: {
+    type: Boolean,
+    default: false
+  },
   passwordResetToken: String,
   passwordResetExpires: Date,
   passwordResetPin: String,

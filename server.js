@@ -23,6 +23,7 @@ const postRoutes = require('./routes/posts'); // New: Posts route
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
+const { trackActivity, startOfflineStatusUpdater } = require('./middleware/activityTracker');
 
 const app = express();
 
@@ -137,19 +138,19 @@ mongoose.connection.on('close', () => {
   console.log('MongoDB connection closed');
 });
 
-// Use routes
+// Use routes (with activity tracking for authenticated routes)
 app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/jobs', jobRoutes);
-app.use('/api/applications', applicationRoutes);
-app.use('/api/profiles', profileRoutes);
-app.use('/api/reviews', reviewRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/media', mediaRoutes);
-app.use('/api/connections', connectionRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/posts', postRoutes); // New: Posts routes
+app.use('/api/users', trackActivity, userRoutes);
+app.use('/api/jobs', trackActivity, jobRoutes);
+app.use('/api/applications', trackActivity, applicationRoutes);
+app.use('/api/profiles', trackActivity, profileRoutes);
+app.use('/api/reviews', trackActivity, reviewRoutes);
+app.use('/api/notifications', trackActivity, notificationRoutes);
+app.use('/api/admin', trackActivity, adminRoutes);
+app.use('/api/media', trackActivity, mediaRoutes);
+app.use('/api/connections', trackActivity, connectionRoutes);
+app.use('/api/analytics', trackActivity, analyticsRoutes);
+app.use('/api/posts', trackActivity, postRoutes); // New: Posts routes
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -174,6 +175,9 @@ const PORT = process.env.PORT || 5000;
 // Start server
 const server = app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  
+  // Start the activity tracker for offline status updates
+  startOfflineStatusUpdater();
 });
 
 // Handle server errors
