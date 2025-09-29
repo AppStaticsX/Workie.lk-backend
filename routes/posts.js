@@ -3,7 +3,7 @@ const router = express.Router();
 const { auth } = require('../middleware/auth');
 const User = require('../models/User');
 const Post = require('../models/Post'); // Import the Post model
-const Profile = require('../models/Profile'); // Import the Profile model
+const Profile = require('../models/Profile');
 const { deleteFile, deleteVideo } = require('../config/cloudinary');
 
 // Create a new post
@@ -510,6 +510,22 @@ router.post('/:postId/comments', auth, async (req, res) => {
     await post.save();
 
     console.log('✅ Comment added successfully to post:', postId);
+
+    // Send notification to post owner (if not commenting on own post)
+    if (post.userId.toString() !== userId.toString()) {
+      try {
+        const NotificationService = require('../services/notificationService');
+        await NotificationService.notifyComment(
+          post._id,
+          post.userId,
+          userId,
+          comment.trim(),
+          post.content?.substring(0, 50) || 'a post'
+        );
+      } catch (notificationError) {
+        console.warn('Failed to send comment notification:', notificationError);
+      }
+    }
 
     res.json({
       success: true,

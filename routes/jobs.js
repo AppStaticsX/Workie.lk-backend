@@ -3,6 +3,7 @@ const Job = require('../models/Job');
 const Application = require('../models/Application');
 const { auth, authorize } = require('../middleware/auth');
 const { validateJob } = require('../middleware/validation');
+const cloudinaryConfig = require('../config/cloudinary');
 
 const router = express.Router();
 
@@ -180,6 +181,45 @@ router.put('/:id', auth, async (req, res) => {
       }
     }
 
+    // Enforce status transition guards
+    if (req.body.status && req.body.status !== job.status) {
+      const from = job.status;
+      const to = req.body.status;
+
+      const isValidTransition = (() => {
+        switch (from) {
+          case 'open':
+            if (to === 'in-progress') {
+              // Require assignedWorker (in body or already set) when moving to in-progress
+              const assigned = req.body.assignedWorker || job.assignedWorker;
+              return !!assigned;
+            }
+            return to === 'paused' || to === 'cancelled';
+          case 'paused':
+            return to === 'open' || to === 'cancelled';
+          case 'in-progress':
+            return to === 'completed' || to === 'cancelled';
+          case 'completed':
+          case 'cancelled':
+            return false; // terminal states
+          default:
+            return false;
+        }
+      })();
+
+      if (!isValidTransition) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status transition from ${from} to ${to}`
+        });
+      }
+
+      // If marking completed, set completedAt
+      if (to === 'completed') {
+        req.body.completedAt = new Date();
+      }
+    }
+
     job = await Job.findByIdAndUpdate(
       req.params.id,
       req.body,
@@ -202,6 +242,104 @@ router.put('/:id', auth, async (req, res) => {
     });
   }
 });
+
+// Job images upload (owner or admin). Accepts multiple files under 'jobImages'
+if (cloudinaryConfig && cloudinaryConfig.uploadJobImage) {
+  const uploadJobImages = cloudinaryConfig.uploadJobImage.array('jobImages', 5);
+
+  router.post('/:id/images', auth, async (req, res) => {
+    try {
+      const job = await Job.findById(req.params.id);
+      if (!job) {
+        return res.status(404).json({ success: false, message: 'Job not found' });
+      }
+
+      // Check if user owns the job or is admin
+      if (job.client.toString() !== req.user._id.toString() && req.user.userType !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Access denied. You can only modify your own jobs.' });
+      }
+
+      uploadJobImages(req, res, async (err) => {
+        if (err) {
+          return res.status(400).json({ success: false, message: 'File upload error', error: err.message });
+        }
+
+        try {
+          if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ success: false, message: 'No files uploaded' });
+          }
+
+          const descriptions = Array.isArray(req.body.descriptions)
+            ? req.body.descriptions
+            : (req.body.descriptions ? [req.body.descriptions] : []);
+
+          // Map uploaded files to Job image entries
+          const newImages = req.files.map((file, idx) => ({
+            url: file.path,
+            publicId: file.filename,
+            description: descriptions[idx] || ''
+          }));
+
+          const updated = await Job.findByIdAndUpdate(
+            job._id,
+            { $push: { images: { $each: newImages } } },
+            { new: true, runValidators: true }
+          );
+
+          return res.status(200).json({
+            success: true,
+            message: 'Images uploaded and attached to job',
+            data: {
+              imagesAdded: newImages,
+              imagesCount: updated.images.length
+            }
+          });
+        } catch (error) {
+          return res.status(500).json({ success: false, message: 'Server error', error: error.message });
+        }
+      });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    }
+  });
+
+  // Delete a specific job image by publicId (owner or admin)
+  router.delete('/:id/images/:publicId', auth, async (req, res) => {
+    try {
+      const { id, publicId } = req.params;
+      const job = await Job.findById(id);
+      if (!job) {
+        return res.status(404).json({ success: false, message: 'Job not found' });
+      }
+
+      if (job.client.toString() !== req.user._id.toString() && req.user.userType !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Access denied. You can only modify your own jobs.' });
+      }
+
+      const exists = job.images.find(img => img.publicId === publicId);
+      if (!exists) {
+        return res.status(404).json({ success: false, message: 'Image not found on this job' });
+      }
+
+      // Delete from Cloudinary first
+      try {
+        await cloudinaryConfig.deleteFile(publicId);
+      } catch (cloudErr) {
+        return res.status(500).json({ success: false, message: 'Failed to delete image from storage', error: cloudErr.message });
+      }
+
+      // Remove from DB
+      await Job.updateOne(
+        { _id: id },
+        { $pull: { images: { publicId } } }
+      );
+
+      return res.status(200).json({ success: true, message: 'Image removed from job' });
+    } catch (error) {
+      return res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    }
+  });
+}
 
 // @route   DELETE /api/jobs/:id
 // @desc    Delete a job (soft delete)

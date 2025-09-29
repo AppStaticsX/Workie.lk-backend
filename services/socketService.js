@@ -28,17 +28,21 @@ class SocketService {
   // Emit event to specific user
   emitToUser(userId, event, data) {
     if (!this.io) {
-      console.warn('Socket service not initialized');
+      console.warn('❌ Socket service not initialized');
       return false;
     }
+
+    console.log(`🎯 Attempting to emit ${event} to user ${userId}`);
+    console.log(`📋 Current connected users:`, Array.from(this.userSockets.keys()));
 
     const socketId = this.userSockets.get(userId);
     if (socketId) {
       this.io.to(socketId).emit(event, data);
-      console.log(`📡 Emitted ${event} to user ${userId}`);
+      console.log(`✅ Successfully emitted ${event} to user ${userId} (socket: ${socketId})`);
       return true;
     } else {
-      console.log(`🔍 User ${userId} not connected`);
+      console.log(`❌ User ${userId} not connected (no socket found)`);
+      console.log(`📋 Available sockets:`, Array.from(this.userSockets.entries()));
       return false;
     }
   }

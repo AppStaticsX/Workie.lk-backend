@@ -4,6 +4,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const { createServer } = require('http');
+const { Server } = require('socket.io');
 require('dotenv').config();
 
 // Import routes
@@ -23,7 +25,6 @@ const postRoutes = require('./routes/posts'); // New: Posts route
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
 const notFound = require('./middleware/notFound');
-const { trackActivity, startOfflineStatusUpdater } = require('./middleware/activityTracker');
 
 const app = express();
 
@@ -138,19 +139,19 @@ mongoose.connection.on('close', () => {
   console.log('MongoDB connection closed');
 });
 
-// Use routes (with activity tracking for authenticated routes)
+// Use routes
 app.use('/api/auth', authRoutes);
-app.use('/api/users', trackActivity, userRoutes);
-app.use('/api/jobs', trackActivity, jobRoutes);
-app.use('/api/applications', trackActivity, applicationRoutes);
-app.use('/api/profiles', trackActivity, profileRoutes);
-app.use('/api/reviews', trackActivity, reviewRoutes);
-app.use('/api/notifications', trackActivity, notificationRoutes);
-app.use('/api/admin', trackActivity, adminRoutes);
-app.use('/api/media', trackActivity, mediaRoutes);
-app.use('/api/connections', trackActivity, connectionRoutes);
-app.use('/api/analytics', trackActivity, analyticsRoutes);
-app.use('/api/posts', trackActivity, postRoutes); // New: Posts routes
+app.use('/api/users', userRoutes);
+app.use('/api/jobs', jobRoutes);
+app.use('/api/applications', applicationRoutes);
+app.use('/api/profiles', profileRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/media', mediaRoutes);
+app.use('/api/connections', connectionRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/posts', postRoutes); // New: Posts routes
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -172,12 +173,58 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
+// Create HTTP server and Socket.IO instance
+const server = createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+  }
+});
+
+// Initialize Socket.IO service
+const SocketService = require('./services/socketService');
+SocketService.init(io);
+
+// Socket.IO connection handling
+io.on('connection', (socket) => {
+  console.log(`📡 New socket connection: ${socket.id}`);
+
+  // Handle user authentication and store socket
+  socket.on('authenticate', (userId) => {
+    console.log(`🔐 Authenticate request from socket ${socket.id} for user: ${userId}`);
+    if (userId) {
+      SocketService.addUserSocket(userId, socket.id);
+      socket.join(`user_${userId}`); // Join user-specific room
+      console.log(`✅ User ${userId} authenticated and joined room user_${userId}`);
+    } else {
+      console.warn(`❌ Invalid userId provided for authentication: ${userId}`);
+    }
+  });
+
+  // Handle disconnection
+  socket.on('disconnect', () => {
+    console.log(`📡 User disconnected: ${socket.id}`);
+    // Find and remove user from socket mapping
+    for (const [userId, socketId] of SocketService.userSockets.entries()) {
+      if (socketId === socket.id) {
+        SocketService.removeUserSocket(userId);
+        break;
+      }
+    }
+  });
+
+  // Handle notification acknowledgments
+  socket.on('notificationRead', (notificationId) => {
+    // Handle marking notification as read
+    console.log(`📖 Notification ${notificationId} marked as read`);
+  });
+});
+
 // Start server
-const server = app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-  
-  // Start the activity tracker for offline status updates
-  startOfflineStatusUpdater();
 });
 
 // Handle server errors
@@ -193,4 +240,4 @@ server.on('error', (err) => {
 // Handle server timeout
 server.timeout = 120000; // 2 minutes timeout
 
-module.exports = { app, server };
+module.exports = { app, server, io };

@@ -99,7 +99,9 @@ const jobSchema = new mongoose.Schema({
   },
   images: [{
     url: String,
-    description: String
+    description: String,
+    publicId: String,
+    uploadedAt: { type: Date, default: Date.now }
   }],
   applicationsCount: {
     type: Number,

@@ -13,7 +13,7 @@ const profileSchema = new mongoose.Schema({
   },
   title: {
     type: String,
-    maxlength: [99, 'Title cannot exceed 99 characters']
+    maxlength: [50, 'Title cannot exceed 50 characters']
   },
   skills: [{
     name: {
