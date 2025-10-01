@@ -292,22 +292,69 @@ router.get('/videos', async (req, res) => {
   }
 });
 
+// Get single post for notifications (requires auth)
+router.get('/single/:postId', auth, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    
+    console.log('📖 Getting post details for notifications:', postId);
+    console.log('👤 Requested by user:', req.user._id);
+
+    const post = await Post.findById(postId)
+      .select('_id userId content privacy createdAt')
+      .populate('userId', 'firstName lastName')
+      .lean();
+
+    if (!post) {
+      console.log('❌ Post not found:', postId);
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found'
+      });
+    }
+
+    console.log('✅ Post found for notification check:');
+    console.log('  - Post ID:', post._id);
+    console.log('  - Post owner (populated):', post.userId);
+    console.log('  - Post owner ID:', post.userId?._id);
+    console.log('  - Requesting user ID:', req.user._id);
+
+    res.json({
+      success: true,
+      data: post
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching post for notifications:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching post details',
+      error: error.message
+    });
+  }
+});
+
 // Get single post
 router.get('/:postId', auth, async (req, res) => {
   try {
     const { postId } = req.params;
+    
+    console.log('📖 Getting single post:', postId);
+    console.log('👤 Requested by user:', req.user._id);
 
-    // TODO: Implement when Post model is created
-    // const post = await Post.findById(postId)
-    //   .populate('userId', 'firstName lastName profilePicture');
+    const post = await Post.findById(postId)
+      .populate('userId', 'firstName lastName profilePicture email')
+      .lean();
 
-    // For now, return mock data
-    const post = {
-      _id: postId,
-      content: 'Sample post content',
-      media: [],
-      createdAt: new Date()
-    };
+    if (!post) {
+      console.log('❌ Post not found:', postId);
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found'
+      });
+    }
+
+    console.log('✅ Post found, owner:', post.userId?._id);
 
     res.json({
       success: true,
@@ -436,16 +483,6 @@ router.delete('/:postId', auth, async (req, res) => {
       });
     }
 
-    // Store post data before deletion for cleanup verification
-    const postDataBeforeDeletion = {
-      id: postId,
-      likesCount: post.likes.length,
-      commentsCount: post.comments.length,
-      ownerId: post.userId.toString()
-    };
-
-    console.log('📊 Post data before deletion:', postDataBeforeDeletion);
-
     // Delete media from Cloudinary if exists
     if (post.media && post.media.length > 0) {
       console.log('🗑️ Deleting media from Cloudinary...');
@@ -468,47 +505,27 @@ router.delete('/:postId', auth, async (req, res) => {
       }
     }
 
-    // Delete the post from database (this removes all embedded comments and likes)
-    const deletionResult = await Post.findByIdAndDelete(postId);
+    // Delete the post from database
+    await Post.findByIdAndDelete(postId);
     console.log('✅ Post deleted successfully from database');
-    
-    // Verify deletion was successful
-    const verifyDeletion = await Post.findById(postId);
-    if (verifyDeletion) {
-      console.error('❌ WARNING: Post still exists after deletion attempt!');
-      throw new Error('Post deletion failed - post still exists in database');
-    }
-    
-    console.log('✅ Deletion verified - post completely removed');
 
-    // Emit socket event for post deletion BEFORE sending response
+    // Emit socket event for post deletion
     const SocketService = require('../services/socketService');
     const deletionData = {
       postId: postId,
       deletedBy: req.user._id,
-      deletedByName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim(),
-      deletionTimestamp: new Date().toISOString(),
-      originalData: postDataBeforeDeletion // Include original data for verification
+      deletedByName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim()
     };
 
     // Notify all users about the post deletion
     SocketService.emitToAll('post_deleted', deletionData);
     console.log('📡 Emitted post_deleted event for post:', postId);
 
-    // Additional cleanup: emit a specific cleanup event to ensure frontend removes any cached data
-    SocketService.emitToAll('post_cleanup_required', {
-      postId: postId,
-      action: 'remove_all_references',
-      timestamp: new Date().toISOString()
-    });
-
     res.json({
       success: true,
       message: 'Post deleted successfully',
       data: {
-        deletedPostId: postId,
-        deletionTimestamp: new Date().toISOString(),
-        originalData: postDataBeforeDeletion
+        deletedPostId: postId
       }
     });
 
@@ -583,9 +600,7 @@ router.post('/:postId/like', auth, async (req, res) => {
       isLiked,
       likesCount: post.likes.length,
       likes: post.likes,
-      userId: userId,
-      ownerId: post.userId.toString(), // Add owner ID for verification
-      timestamp: new Date().toISOString() // Add timestamp
+      userId: userId
     };
 
     // Notify all users about the like update (except the user who liked)
@@ -677,9 +692,7 @@ router.post('/:postId/comments', auth, async (req, res) => {
       postId: post._id,
       comment: newComment,
       totalComments: post.comments.length,
-      commenterUserId: userId,
-      ownerId: post.userId.toString(), // Add owner ID for verification
-      timestamp: new Date().toISOString() // Add timestamp
+      commenterUserId: userId
     };
 
     // Notify all users about the new comment
