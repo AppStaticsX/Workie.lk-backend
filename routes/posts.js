@@ -77,6 +77,19 @@ router.post('/', auth, async (req, res) => {
 
     console.log('✅ Post saved successfully:', savedPost._id);
 
+    // Emit socket event for new post creation
+    const SocketService = require('../services/socketService');
+    const newPostData = {
+      postId: savedPost._id,
+      post: savedPost,
+      creatorUserId: req.user._id,
+      creatorName: `${user.firstName} ${user.lastName}`.trim()
+    };
+
+    // Notify all users about the new post
+    SocketService.emitToAll('new_post_created', newPostData);
+    console.log('📡 Emitted new_post_created event for post:', savedPost._id);
+
     res.status(201).json({
       success: true,
       message: 'Post created successfully',
@@ -311,6 +324,88 @@ router.get('/:postId', auth, async (req, res) => {
   }
 });
 
+// Update/Edit post
+router.put('/:postId', auth, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { content, media, privacy, location, taggedUsers } = req.body;
+    
+    console.log('✏️ Updating post:', postId);
+    console.log('👤 User requesting update:', req.user._id);
+
+    // Find the post
+    const post = await Post.findById(postId);
+    
+    if (!post) {
+      console.log('❌ Post not found:', postId);
+      return res.status(404).json({
+        success: false,
+        message: 'Post not found'
+      });
+    }
+
+    console.log('📝 Post found, owner:', post.userId);
+    
+    // Check if user owns the post
+    if (post.userId.toString() !== req.user._id.toString()) {
+      console.log('❌ User not authorized to update post');
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to update this post'
+      });
+    }
+
+    // Update post fields
+    const updates = {};
+    if (content !== undefined) updates.content = content;
+    if (media !== undefined) updates.media = media;
+    if (privacy !== undefined) updates.privacy = privacy;
+    if (location !== undefined) updates.location = location;
+    if (taggedUsers !== undefined) updates.taggedUsers = taggedUsers;
+    
+    // Add edit timestamp
+    updates.updatedAt = new Date();
+    updates.isEdited = true;
+
+    // Update the post
+    const updatedPost = await Post.findByIdAndUpdate(
+      postId,
+      updates,
+      { new: true }
+    ).populate('userId', 'firstName lastName profilePicture');
+
+    console.log('✅ Post updated successfully');
+
+    // Emit socket event for post update
+    const SocketService = require('../services/socketService');
+    const updateData = {
+      postId: postId,
+      updatedPost: updatedPost,
+      updatedBy: req.user._id,
+      updatedByName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim(),
+      changes: Object.keys(updates)
+    };
+
+    // Notify all users about the post update
+    SocketService.emitToAll('post_updated', updateData);
+    console.log('📡 Emitted post_updated event for post:', postId);
+
+    res.json({
+      success: true,
+      message: 'Post updated successfully',
+      data: updatedPost
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating post:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating post',
+      error: error.message
+    });
+  }
+});
+
 // Delete post
 router.delete('/:postId', auth, async (req, res) => {
   try {
@@ -366,6 +461,18 @@ router.delete('/:postId', auth, async (req, res) => {
     // Delete the post from database
     await Post.findByIdAndDelete(postId);
     console.log('✅ Post deleted successfully from database');
+
+    // Emit socket event for post deletion
+    const SocketService = require('../services/socketService');
+    const deletionData = {
+      postId: postId,
+      deletedBy: req.user._id,
+      deletedByName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim()
+    };
+
+    // Notify all users about the post deletion
+    SocketService.emitToAll('post_deleted', deletionData);
+    console.log('📡 Emitted post_deleted event for post:', postId);
 
     res.json({
       success: true,
@@ -439,6 +546,27 @@ router.post('/:postId/like', auth, async (req, res) => {
     // Save the updated post
     await post.save();
 
+    // Emit socket event for real-time updates
+    const SocketService = require('../services/socketService');
+    const updateData = {
+      postId: post._id,
+      isLiked,
+      likesCount: post.likes.length,
+      likes: post.likes,
+      userId: userId
+    };
+
+    // Notify all users about the like update (except the user who liked)
+    SocketService.emitToAll('post_like_updated', updateData);
+
+    // Also notify specific post owner if different from liker
+    if (post.userId.toString() !== userId.toString()) {
+      SocketService.emitToUser(post.userId.toString(), 'post_like_notification', {
+        ...updateData,
+        likerName: req.user.firstName + ' ' + req.user.lastName
+      });
+    }
+
     res.json({
       success: true,
       message: isLiked ? 'Post liked successfully' : 'Post unliked successfully',
@@ -510,6 +638,27 @@ router.post('/:postId/comments', auth, async (req, res) => {
     await post.save();
 
     console.log('✅ Comment added successfully to post:', postId);
+
+    // Emit socket event for real-time comment updates
+    const SocketService = require('../services/socketService');
+    const updateData = {
+      postId: post._id,
+      comment: newComment,
+      totalComments: post.comments.length,
+      commenterUserId: userId
+    };
+
+    // Notify all users about the new comment
+    SocketService.emitToAll('post_comment_added', updateData);
+
+    // Also notify specific post owner if different from commenter
+    if (post.userId.toString() !== userId.toString()) {
+      SocketService.emitToUser(post.userId.toString(), 'post_comment_notification', {
+        ...updateData,
+        commenterName: user.firstName + ' ' + user.lastName,
+        postContent: post.content?.substring(0, 50) || 'a post'
+      });
+    }
 
     // Send notification to post owner (if not commenting on own post)
     if (post.userId.toString() !== userId.toString()) {
