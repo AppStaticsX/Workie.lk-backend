@@ -436,6 +436,16 @@ router.delete('/:postId', auth, async (req, res) => {
       });
     }
 
+    // Store post data before deletion for cleanup verification
+    const postDataBeforeDeletion = {
+      id: postId,
+      likesCount: post.likes.length,
+      commentsCount: post.comments.length,
+      ownerId: post.userId.toString()
+    };
+
+    console.log('📊 Post data before deletion:', postDataBeforeDeletion);
+
     // Delete media from Cloudinary if exists
     if (post.media && post.media.length > 0) {
       console.log('🗑️ Deleting media from Cloudinary...');
@@ -458,27 +468,47 @@ router.delete('/:postId', auth, async (req, res) => {
       }
     }
 
-    // Delete the post from database
-    await Post.findByIdAndDelete(postId);
+    // Delete the post from database (this removes all embedded comments and likes)
+    const deletionResult = await Post.findByIdAndDelete(postId);
     console.log('✅ Post deleted successfully from database');
+    
+    // Verify deletion was successful
+    const verifyDeletion = await Post.findById(postId);
+    if (verifyDeletion) {
+      console.error('❌ WARNING: Post still exists after deletion attempt!');
+      throw new Error('Post deletion failed - post still exists in database');
+    }
+    
+    console.log('✅ Deletion verified - post completely removed');
 
-    // Emit socket event for post deletion
+    // Emit socket event for post deletion BEFORE sending response
     const SocketService = require('../services/socketService');
     const deletionData = {
       postId: postId,
       deletedBy: req.user._id,
-      deletedByName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim()
+      deletedByName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim(),
+      deletionTimestamp: new Date().toISOString(),
+      originalData: postDataBeforeDeletion // Include original data for verification
     };
 
     // Notify all users about the post deletion
     SocketService.emitToAll('post_deleted', deletionData);
     console.log('📡 Emitted post_deleted event for post:', postId);
 
+    // Additional cleanup: emit a specific cleanup event to ensure frontend removes any cached data
+    SocketService.emitToAll('post_cleanup_required', {
+      postId: postId,
+      action: 'remove_all_references',
+      timestamp: new Date().toISOString()
+    });
+
     res.json({
       success: true,
       message: 'Post deleted successfully',
       data: {
-        deletedPostId: postId
+        deletedPostId: postId,
+        deletionTimestamp: new Date().toISOString(),
+        originalData: postDataBeforeDeletion
       }
     });
 
@@ -553,7 +583,9 @@ router.post('/:postId/like', auth, async (req, res) => {
       isLiked,
       likesCount: post.likes.length,
       likes: post.likes,
-      userId: userId
+      userId: userId,
+      ownerId: post.userId.toString(), // Add owner ID for verification
+      timestamp: new Date().toISOString() // Add timestamp
     };
 
     // Notify all users about the like update (except the user who liked)
@@ -645,7 +677,9 @@ router.post('/:postId/comments', auth, async (req, res) => {
       postId: post._id,
       comment: newComment,
       totalComments: post.comments.length,
-      commenterUserId: userId
+      commenterUserId: userId,
+      ownerId: post.userId.toString(), // Add owner ID for verification
+      timestamp: new Date().toISOString() // Add timestamp
     };
 
     // Notify all users about the new comment
