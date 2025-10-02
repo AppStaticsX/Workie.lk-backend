@@ -17,6 +17,7 @@ router.post('/', auth, async (req, res) => {
       privacy,
       location,
       taggedUsers,
+      hashtags,
       userId,
       userEmail,
       mediaCount,
@@ -65,6 +66,7 @@ router.post('/', auth, async (req, res) => {
       privacy: privacy || 'public',
       location: location || '',
       taggedUsers: taggedUsers || [],
+      hashtags: hashtags || [],
       mediaCount: media ? media.length : 0,
       hasMedia: media ? media.length > 0 : false
     };
@@ -608,10 +610,16 @@ router.post('/:postId/like', auth, async (req, res) => {
 
     // Also notify specific post owner if different from liker
     if (post.userId.toString() !== userId.toString()) {
-      SocketService.emitToUser(post.userId.toString(), 'post_like_notification', {
-        ...updateData,
-        likerName: req.user.firstName + ' ' + req.user.lastName
-      });
+      const notificationData = {
+        postOwnerId: post.userId.toString(),
+        likerName: (req.user.firstName + ' ' + req.user.lastName).trim(),
+        postContent: post.content || 'your post',
+        postId: post._id.toString(),
+        isLiked: isLiked
+      };
+      
+      SocketService.emitToUser(post.userId.toString(), 'post_like_notification', notificationData);
+      console.log('📡 Emitted post_like_notification to user:', post.userId.toString());
     }
 
     res.json({
@@ -700,11 +708,16 @@ router.post('/:postId/comments', auth, async (req, res) => {
 
     // Also notify specific post owner if different from commenter
     if (post.userId.toString() !== userId.toString()) {
-      SocketService.emitToUser(post.userId.toString(), 'post_comment_notification', {
-        ...updateData,
-        commenterName: user.firstName + ' ' + user.lastName,
-        postContent: post.content?.substring(0, 50) || 'a post'
-      });
+      const notificationData = {
+        postOwnerId: post.userId.toString(),
+        commenterName: (user.firstName + ' ' + user.lastName).trim(),
+        commentText: comment.trim(),
+        postContent: post.content || 'your post',
+        postId: post._id.toString()
+      };
+      
+      SocketService.emitToUser(post.userId.toString(), 'post_comment_notification', notificationData);
+      console.log('📡 Emitted post_comment_notification to user:', post.userId.toString());
     }
 
     // Send notification to post owner (if not commenting on own post)
