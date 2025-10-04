@@ -51,6 +51,16 @@ router.post('/', auth, async (req, res) => {
       title: profileTitle
     });
 
+    console.log('🏷️ Hashtags received:', hashtags);
+
+    // Validate and clean hashtags
+    const cleanHashtags = Array.isArray(hashtags) 
+      ? hashtags.filter(tag => typeof tag === 'string' && tag.trim().length > 0)
+                .map(tag => tag.replace('#', '').trim())
+      : [];
+    
+    console.log('🏷️ Clean hashtags for database:', cleanHashtags);
+
     // Create post object
     const postData = {
       userId: req.user._id,
@@ -66,7 +76,7 @@ router.post('/', auth, async (req, res) => {
       privacy: privacy || 'public',
       location: location || '',
       taggedUsers: taggedUsers || [],
-      hashtags: hashtags || [],
+      hashtags: cleanHashtags,
       mediaCount: media ? media.length : 0,
       hasMedia: media ? media.length > 0 : false
     };
