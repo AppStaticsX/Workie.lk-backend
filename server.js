@@ -21,7 +21,6 @@ const mediaRoutes = require('./routes/media');
 const connectionRoutes = require('./routes/connections');
 const analyticsRoutes = require('./routes/analytics');
 const postRoutes = require('./routes/posts'); // New: Posts route
-const aiRoutes = require('./routes/ai'); // New: AI routes
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -153,7 +152,6 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/connections', connectionRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/posts', postRoutes); // New: Posts routes
-app.use('/api/ai', aiRoutes); // New: AI routes
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

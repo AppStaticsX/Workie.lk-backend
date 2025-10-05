@@ -658,7 +658,7 @@ router.post('/google-signin', async (req, res) => {
         emailVerificationCode: undefined, // No need for verification code
         emailVerificationExpires: undefined,
         isEmailVerified: payload.email_verified || true,
-        userType: 'worker', // Default user type
+        userType: undefined, // Default user type - will be set during role selection
         isVerified: true,
         isActive: true,
         profilePicture: payload.picture || '',
