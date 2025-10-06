@@ -412,15 +412,7 @@ router.get('/:id/applications', auth, async (req, res) => {
     }
 
     const applications = await Application.find({ job: req.params.id, isActive: true })
-      .populate('worker', 'firstName lastName profilePicture')
-      .populate({
-        path: 'worker',
-        populate: {
-          path: 'profile',
-          model: 'Profile',
-          select: 'ratings skills completedJobs'
-        }
-      })
+      .populate('worker', 'firstName lastName profilePicture email phone userType')
       .sort({ createdAt: -1 });
 
     res.status(200).json({
