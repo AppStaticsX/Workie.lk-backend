@@ -129,6 +129,8 @@ router.post('/', auth, authorize('client', 'admin'), validateJob, async (req, re
       client: req.user._id
     };
 
+    console.log('Creating job with data:', JSON.stringify(jobData, null, 2));
+
     const job = await Job.create(jobData);
     await job.populate('client', 'firstName lastName profilePicture');
 
@@ -138,9 +140,35 @@ router.post('/', auth, authorize('client', 'admin'), validateJob, async (req, re
       data: job
     });
   } catch (error) {
+    console.error('Job creation error:', error);
+    
+    // Handle mongoose validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => ({
+        field: err.path,
+        message: err.message,
+        value: err.value
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Job validation failed',
+        errors: validationErrors
+      });
+    }
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate job entry',
+        error: error.message
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Server error',
+      message: 'Server error while creating job',
       error: error.message
     });
   }
