@@ -18,8 +18,7 @@ const createTransporter = () => {
     socketTimeout: 30000,     // 30 seconds (reduced from 60)
     // Enhanced TLS settings for cloud providers
     tls: {
-      rejectUnauthorized: true, // More secure
-      ciphers: 'TLSv1.2'
+      rejectUnauthorized: false, // More secure
     },
     // Pool settings optimized for cloud hosting
     pool: true,
