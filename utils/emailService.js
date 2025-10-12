@@ -2,11 +2,19 @@ const nodemailer = require('nodemailer');
 
 // Create transporter with explicit Gmail configuration
 const createTransporter = () => {
+  // Enhanced logging for production debugging
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  console.log(`📧 Creating email transporter for ${process.env.NODE_ENV} environment`);
+  console.log(`📧 EMAIL_USER: ${process.env.EMAIL_USER ? '✅ Set' : '❌ Missing'}`);
+  console.log(`📧 EMAIL_PASS: ${process.env.EMAIL_PASS ? '✅ Set (length: ' + process.env.EMAIL_PASS.length + ')' : '❌ Missing'}`);
+
   return nodemailer.createTransport({
     service: 'gmail',
     host: 'smtp.gmail.com',
     port: 587,
-    secure: false,
+    secure: false, // true for 465, false for other ports
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
@@ -14,36 +22,55 @@ const createTransporter = () => {
     tls: {
       rejectUnauthorized: false
     },
-    debug: process.env.NODE_ENV === 'development',
-    logger: process.env.NODE_ENV === 'development'
+    // Enhanced debugging for production issues
+    debug: isDevelopment || (isProduction && process.env.EMAIL_DEBUG === 'true'),
+    logger: isDevelopment || (isProduction && process.env.EMAIL_DEBUG === 'true'),
+    // Add connection timeout settings
+    connectionTimeout: 60000, // 60 seconds
+    greetingTimeout: 30000,   // 30 seconds
+    socketTimeout: 60000      // 60 seconds
   });
 };
 
 // Send email function with proper verification
 const sendEmail = async (options) => {
+  const startTime = Date.now();
+  console.log(`📧 [${new Date().toISOString()}] Starting email send to: ${options.to}`);
+  
   try {
     // Validate email configuration
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      throw new Error('Email configuration missing: EMAIL_USER or EMAIL_PASS not set');
+      const error = 'Email configuration missing: EMAIL_USER or EMAIL_PASS not set';
+      console.error(`❌ ${error}`);
+      throw new Error(error);
     }
 
     // Validate recipient email
     if (!options.to || !options.to.includes('@')) {
-      throw new Error('Invalid recipient email address');
+      const error = 'Invalid recipient email address';
+      console.error(`❌ ${error}: ${options.to}`);
+      throw new Error(error);
     }
 
+    console.log('📧 Creating transporter...');
     const transporter = createTransporter();
 
-    // Verify transporter connection
+    // Verify transporter connection with enhanced error handling
+    console.log('🔗 Verifying SMTP connection...');
     try {
       await transporter.verify();
+      console.log('✅ SMTP connection verified successfully');
     } catch (verifyError) {
+      console.error(`❌ SMTP verification failed:`, verifyError);
+      
       if (verifyError.code === 'EAUTH') {
-        throw new Error('Gmail authentication failed. Check if 2FA is enabled and you are using an App Password');
-      } else if (verifyError.code === 'ECONNECTION') {
-        throw new Error('Cannot connect to Gmail SMTP server. Check internet connection');
+        throw new Error('Gmail authentication failed. Check if 2FA is enabled and you are using an App Password. Ensure no spaces in EMAIL_PASS.');
+      } else if (verifyError.code === 'ECONNECTION' || verifyError.code === 'ETIMEDOUT') {
+        throw new Error('Cannot connect to Gmail SMTP server. Check internet connection and firewall settings.');
+      } else if (verifyError.code === 'ENOTFOUND') {
+        throw new Error('Gmail SMTP server not found. Check DNS settings.');
       } else {
-        throw new Error(`Email server verification failed: ${verifyError.message}`);
+        throw new Error(`Email server verification failed: ${verifyError.message} (Code: ${verifyError.code})`);
       }
     }
 
@@ -55,14 +82,35 @@ const sendEmail = async (options) => {
       html: options.html
     };
 
+    console.log('📤 Sending email...');
     const result = await transporter.sendMail(mailOptions);
     
     if (!result.messageId) {
       throw new Error('Email was not sent successfully - no message ID returned');
     }
     
+    const duration = Date.now() - startTime;
+    console.log(`✅ Email sent successfully in ${duration}ms. Message ID: ${result.messageId}`);
+    
     return result;
   } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ Email sending failed after ${duration}ms:`, error.message);
+    
+    // Enhanced error reporting for production debugging
+    if (process.env.NODE_ENV === 'production') {
+      console.error('🔍 Production Email Debug Info:', {
+        to: options.to,
+        subject: options.subject,
+        hasHtml: !!options.html,
+        hasText: !!options.text,
+        emailUserSet: !!process.env.EMAIL_USER,
+        emailPassLength: process.env.EMAIL_PASS ? process.env.EMAIL_PASS.length : 0,
+        nodeEnv: process.env.NODE_ENV,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     // Re-throw with more specific error message
     throw new Error(`Email sending failed: ${error.message}`);
   }
