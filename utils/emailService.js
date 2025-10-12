@@ -1,23 +1,36 @@
 const nodemailer = require('nodemailer');
 const logger = require('./logger');
 
-// Create transporter
+// Create transporter with improved Gmail configuration
 const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // Use TLS
+  return nodemailer.createTransporter({
+    service: 'gmail', // Use Gmail service for better reliability
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
     },
+    // Additional options for better reliability
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 3,
+    rateDelta: 1000,
+    rateLimit: 5,
+    // Timeout settings
+    connectionTimeout: 60000, // 60 seconds
+    greetingTimeout: 30000,   // 30 seconds
+    socketTimeout: 60000,     // 60 seconds
+    // TLS settings for Gmail
     tls: {
-      rejectUnauthorized: false
-    }
+      rejectUnauthorized: false,
+      ciphers: 'SSLv3'
+    },
+    // Debug option (can be enabled for troubleshooting)
+    debug: process.env.NODE_ENV === 'development',
+    logger: process.env.NODE_ENV === 'development'
   });
 };
 
-// Send email function
+// Send email function with enhanced error handling
 const sendEmail = async (options) => {
   try {
     // Validate email configuration
@@ -25,48 +38,105 @@ const sendEmail = async (options) => {
       throw new Error('Email configuration missing: EMAIL_USER or EMAIL_PASS not set in environment variables');
     }
 
+    // Validate recipient email
+    if (!options.to || !options.to.includes('@')) {
+      throw new Error('Invalid recipient email address');
+    }
+
     const transporter = createTransporter();
     
-    // Verify transporter connection
-    await new Promise((resolve, reject) => {
-      transporter.verify(function (error, success) {
-        if (error) {
-          logger.error('Transporter verification error', {
-            error: error.message,
-            stack: error.stack,
-            code: error.code,
-            command: error.command,
-            emailConfig: {
-              host: 'smtp.gmail.com',
-              port: 587,
-              user: process.env.EMAIL_USER ? '***configured***' : 'missing',
-              pass: process.env.EMAIL_PASS ? '***configured***' : 'missing'
+    // Verify transporter connection with retry logic
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        await new Promise((resolve, reject) => {
+          transporter.verify(function (error, success) {
+            if (error) {
+              logger.error(`Transporter verification error (attempt ${retryCount + 1}/${maxRetries})`, {
+                error: error.message,
+                stack: error.stack,
+                code: error.code,
+                command: error.command,
+                emailConfig: {
+                  service: 'gmail',
+                  user: process.env.EMAIL_USER ? '***configured***' : 'missing',
+                  pass: process.env.EMAIL_PASS ? '***configured***' : 'missing'
+                }
+              });
+              
+              // Provide specific error guidance
+              if (error.code === 'EAUTH') {
+                reject(new Error('Gmail authentication failed. Please check your app password. Make sure 2FA is enabled and you\'re using an app-specific password.'));
+              } else if (error.code === 'ECONNECTION') {
+                reject(new Error('Connection to Gmail SMTP server failed. Please check your internet connection and firewall settings.'));
+              } else {
+                reject(new Error(`Email server connection failed: ${error.message}`));
+              }
+            } else {
+              logger.info('Email server ready to send messages');
+              resolve(success);
             }
           });
-          reject(new Error(`Email server connection failed: ${error.message}`));
-        } else {
-          logger.info('Email server ready to send messages');
-          resolve(success);
+        });
+        break; // Success, exit retry loop
+      } catch (verifyError) {
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          throw verifyError;
         }
-      });
-    });
+        // Wait before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+      }
+    }
 
     const mailOptions = {
       from: `"Workie.lk" <${process.env.EMAIL_USER}>`,
       to: options.to,
       subject: options.subject,
       text: options.text,
-      html: options.html
+      html: options.html,
+      // Additional headers for better deliverability
+      headers: {
+        'X-Priority': '1',
+        'X-MSMail-Priority': 'High',
+        'Importance': 'high'
+      }
     };
 
-    const result = await transporter.sendMail(mailOptions);
-    logger.info('Email sent successfully', {
-      messageId: result.messageId,
-      to: options.to,
-      subject: options.subject,
-      response: result.response
-    });
-    return result;
+    // Send email with retry logic
+    let sendRetryCount = 0;
+    const maxSendRetries = 3;
+    
+    while (sendRetryCount < maxSendRetries) {
+      try {
+        const result = await transporter.sendMail(mailOptions);
+        logger.info('Email sent successfully', {
+          messageId: result.messageId,
+          to: options.to,
+          subject: options.subject,
+          response: result.response,
+          attempt: sendRetryCount + 1
+        });
+        return result;
+      } catch (sendError) {
+        sendRetryCount++;
+        logger.warn(`Email send attempt ${sendRetryCount}/${maxSendRetries} failed`, {
+          error: sendError.message,
+          code: sendError.code,
+          to: options.to,
+          subject: options.subject
+        });
+        
+        if (sendRetryCount >= maxSendRetries) {
+          throw sendError;
+        }
+        
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, sendRetryCount)));
+      }
+    }
   } catch (error) {
     logger.error('Email sending failed', {
       error: error.message,
