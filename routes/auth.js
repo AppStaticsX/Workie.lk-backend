@@ -585,10 +585,12 @@ router.post('/resend-otp', async (req, res) => {
         message: 'OTP sent successfully'
       });
     } catch (emailError) {
-      res.status(500).json({
+      console.error('Failed to send OTP email:', emailError);
+      res.status(200).json({
         success: false,
         message: 'Failed to send OTP. Please check your email address or try again later.',
-        error: emailError.message
+        emailSent: false,
+        error: 'email_failed'
       });
     }
 
