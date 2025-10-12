@@ -1,7 +1,91 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns').promises;
 require('dotenv').config();
 
-// Enhanced email service test with detailed diagnostics
+// Detect cloud provider
+const detectCloudProvider = () => {
+  if (process.env.RENDER) return 'Render';
+  if (process.env.DYNO) return 'Heroku';
+  if (process.env.VERCEL) return 'Vercel';
+  if (process.env.NETLIFY) return 'Netlify';
+  if (process.env.AWS_LAMBDA_FUNCTION_NAME) return 'AWS Lambda';
+  return 'Unknown/Local';
+};
+
+// Test network connectivity to Gmail SMTP
+const testSMTPConnectivity = async () => {
+  console.log('2. Testing Network Connectivity:');
+  
+  try {
+    // Test DNS resolution
+    const addresses = await dns.resolve4('smtp.gmail.com');
+    console.log('✓ DNS Resolution successful:', addresses[0]);
+    
+    // Test if we can reach SMTP ports
+    const net = require('net');
+    
+    // Test port 587 (STARTTLS)
+    const testPort587 = () => new Promise((resolve, reject) => {
+      const socket = net.createConnection(587, 'smtp.gmail.com');
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        reject(new Error('Connection timeout'));
+      }, 10000);
+      
+      socket.on('connect', () => {
+        clearTimeout(timeout);
+        socket.destroy();
+        resolve(true);
+      });
+      
+      socket.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+    
+    // Test port 465 (SSL)
+    const testPort465 = () => new Promise((resolve, reject) => {
+      const socket = net.createConnection(465, 'smtp.gmail.com');
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        reject(new Error('Connection timeout'));
+      }, 10000);
+      
+      socket.on('connect', () => {
+        clearTimeout(timeout);
+        socket.destroy();
+        resolve(true);
+      });
+      
+      socket.on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      });
+    });
+    
+    try {
+      await testPort587();
+      console.log('✓ Port 587 (STARTTLS) accessible');
+    } catch (err) {
+      console.log('❌ Port 587 blocked:', err.message);
+    }
+    
+    try {
+      await testPort465();
+      console.log('✓ Port 465 (SSL) accessible');
+    } catch (err) {
+      console.log('❌ Port 465 blocked:', err.message);
+    }
+    
+  } catch (err) {
+    console.log('❌ Network connectivity issue:', err.message);
+  }
+  
+  console.log();
+};
+
+// Enhanced email service test with cloud hosting diagnostics
 const testEmailService = async () => {
   console.log('=== WORKIE EMAIL SERVICE DIAGNOSTICS ===\n');
   
@@ -10,6 +94,9 @@ const testEmailService = async () => {
   console.log('EMAIL_USER:', process.env.EMAIL_USER ? `✓ Set (${process.env.EMAIL_USER})` : '❌ MISSING');
   console.log('EMAIL_PASS:', process.env.EMAIL_PASS ? `✓ Set (${process.env.EMAIL_PASS.substring(0, 4)}...)` : '❌ MISSING');
   console.log('CLIENT_URL:', process.env.CLIENT_URL || 'Not set');
+  console.log('NODE_ENV:', process.env.NODE_ENV || 'not set');
+  console.log('Platform:', process.platform);
+  console.log('Cloud Provider:', detectCloudProvider());
   console.log();
   
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
@@ -23,9 +110,12 @@ const testEmailService = async () => {
     return;
   }
 
+  // Test network connectivity first
+  await testSMTPConnectivity();
+
   try {
-    // 2. Create and test transporter
-    console.log('2. Creating SMTP Transporter...');
+    // 3. Create and test transporter
+    console.log('3. Creating SMTP Transporter...');
     const transporter = nodemailer.createTransport({
       service: 'gmail', // Use service instead of manual config
       auth: {
@@ -131,14 +221,48 @@ const testEmailService = async () => {
       console.error('Error code:', error.code);
     }
     
-    console.log('\n🔧 Troubleshooting Steps:');
-    console.log('1. Double-check your Gmail credentials in .env file');
-    console.log('2. Make sure you\'re using an App Password, not your regular Gmail password');
-    console.log('3. Verify 2-Factor Authentication is enabled on your Gmail account');
-    console.log('4. Try generating a new App Password');
-    console.log('5. Check if your network allows SMTP connections on port 587');
-    
-    console.log('\n📋 App Password Setup Guide:');
+      console.log('\n🔧 Troubleshooting Steps:');
+      console.log('1. Double-check your Gmail credentials in .env file');
+      console.log('2. Make sure you\'re using an App Password, not your regular Gmail password');
+      console.log('3. Verify 2-Factor Authentication is enabled on your Gmail account');
+      console.log('4. Try generating a new App Password');
+      console.log('5. Check if your network allows SMTP connections on port 587');
+      
+      // Cloud-specific advice
+      const cloudProvider = detectCloudProvider();
+      if (cloudProvider !== 'Unknown/Local') {
+        console.log(`\n🌥️  Cloud Provider Specific Issues (${cloudProvider}):`);
+        
+        switch (cloudProvider) {
+          case 'Render':
+            console.log('- Render may block SMTP connections on free tier');
+            console.log('- Try setting USE_ALTERNATIVE_SMTP=true in environment');
+            console.log('- Consider using SendGrid add-on from Render marketplace');
+            console.log('- Upgrade to paid plan for better network access');
+            break;
+            
+          case 'Heroku':
+            console.log('- Heroku blocks SMTP on free dynos');
+            console.log('- Use SendGrid Heroku add-on instead');
+            console.log('- Upgrade to paid dyno for SMTP access');
+            break;
+            
+          case 'Vercel':
+            console.log('- Vercel serverless functions have execution time limits');
+            console.log('- Consider using async email sending');
+            console.log('- Use email service APIs instead of SMTP');
+            break;
+            
+          case 'Netlify':
+            console.log('- Netlify Functions may have SMTP restrictions');
+            console.log('- Use email service APIs via webhooks');
+            break;
+            
+          default:
+            console.log('- Cloud hosting may restrict SMTP connections');
+            console.log('- Consider using email service APIs (SendGrid, Mailgun, etc.)');
+        }
+      }    console.log('\n📋 App Password Setup Guide:');
     console.log('1. Go to https://myaccount.google.com/security');
     console.log('2. Click "2-Step Verification" and make sure it\'s ON');
     console.log('3. Go back and click "App passwords"');

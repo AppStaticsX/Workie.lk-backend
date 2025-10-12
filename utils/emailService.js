@@ -1,33 +1,52 @@
 const nodemailer = require('nodemailer');
 const logger = require('./logger');
 
-// Create transporter with improved Gmail configuration
+// Create transporter with cloud-hosting optimized Gmail configuration
 const createTransporter = () => {
-  return nodemailer.createTransport({
-    service: 'gmail', // Use Gmail service for better reliability
+  // Use explicit SMTP configuration for better cloud compatibility
+  const config = {
+    host: 'smtp.gmail.com',
+    port: 587, // Use port 587 for better cloud compatibility
+    secure: false, // Use STARTTLS
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
     },
-    // Additional options for better reliability
-    pool: true,
-    maxConnections: 1,
-    maxMessages: 3,
-    rateDelta: 1000,
-    rateLimit: 5,
-    // Timeout settings
-    connectionTimeout: 60000, // 60 seconds
-    greetingTimeout: 30000,   // 30 seconds
-    socketTimeout: 60000,     // 60 seconds
-    // TLS settings for Gmail
+    // Optimized timeout settings for cloud hosting
+    connectionTimeout: 30000, // 30 seconds (reduced from 60)
+    greetingTimeout: 15000,   // 15 seconds (reduced from 30)
+    socketTimeout: 30000,     // 30 seconds (reduced from 60)
+    // Enhanced TLS settings for cloud providers
     tls: {
-      rejectUnauthorized: false,
-      ciphers: 'SSLv3'
+      rejectUnauthorized: true, // More secure
+      ciphers: 'TLSv1.2'
     },
-    // Debug option (can be enabled for troubleshooting)
+    // Pool settings optimized for cloud hosting
+    pool: true,
+    maxConnections: 2, // Increased slightly for better throughput
+    maxMessages: 100,  // Increased for efficiency
+    rateDelta: 2000,   // Slower rate for better reliability
+    rateLimit: 3,      // Conservative rate limit
+    // Add retry and keepalive for cloud environments
+    retry: 3,
+    keepAlive: true,
+    // Debug option
     debug: process.env.NODE_ENV === 'development',
     logger: process.env.NODE_ENV === 'development'
-  });
+  };
+
+  // Alternative configuration for problematic cloud providers
+  if (process.env.USE_ALTERNATIVE_SMTP === 'true') {
+    config.host = 'smtp.gmail.com';
+    config.port = 465; // SSL port as alternative
+    config.secure = true;
+    config.tls = {
+      rejectUnauthorized: false,
+      servername: 'smtp.gmail.com'
+    };
+  }
+
+  return nodemailer.createTransport(config);
 };
 
 // Send email function with enhanced error handling
@@ -45,37 +64,56 @@ const sendEmail = async (options) => {
 
     const transporter = createTransporter();
     
-    // Verify transporter connection with retry logic
+    // Enhanced verification with cloud-optimized retry logic
     let retryCount = 0;
-    const maxRetries = 3;
+    const maxRetries = 5; // Increased retries for cloud environments
+    const baseDelay = 3000; // Base delay in milliseconds
     
     while (retryCount < maxRetries) {
       try {
         await new Promise((resolve, reject) => {
+          const verifyTimeout = setTimeout(() => {
+            reject(new Error('Verification timeout - cloud hosting may be blocking SMTP connections'));
+          }, 20000); // 20 second timeout for verification
+          
           transporter.verify(function (error, success) {
+            clearTimeout(verifyTimeout);
+            
             if (error) {
               logger.error(`Transporter verification error (attempt ${retryCount + 1}/${maxRetries})`, {
                 error: error.message,
                 stack: error.stack,
                 code: error.code,
                 command: error.command,
+                attempt: retryCount + 1,
+                totalAttempts: maxRetries,
                 emailConfig: {
-                  service: 'gmail',
+                  host: 'smtp.gmail.com',
+                  port: 587,
                   user: process.env.EMAIL_USER ? '***configured***' : 'missing',
                   pass: process.env.EMAIL_PASS ? '***configured***' : 'missing'
                 }
               });
               
-              // Provide specific error guidance
+              // Provide specific error guidance for cloud hosting
               if (error.code === 'EAUTH') {
-                reject(new Error('Gmail authentication failed. Please check your app password. Make sure 2FA is enabled and you\'re using an app-specific password.'));
-              } else if (error.code === 'ECONNECTION') {
-                reject(new Error('Connection to Gmail SMTP server failed. Please check your internet connection and firewall settings.'));
+                reject(new Error('Gmail authentication failed. Check app password and 2FA settings.'));
+              } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
+                if (retryCount < maxRetries - 1) {
+                  reject(new Error(`SMTP connection failed (attempt ${retryCount + 1}). Retrying with exponential backoff...`));
+                } else {
+                  reject(new Error('SMTP connection persistently failing. Cloud hosting may be blocking Gmail SMTP. Consider using alternative email service like SendGrid.'));
+                }
+              } else if (error.code === 'EDNS') {
+                reject(new Error('DNS resolution failed for Gmail SMTP server. Check network connectivity.'));
               } else {
-                reject(new Error(`Email server connection failed: ${error.message}`));
+                reject(new Error(`Email server connection failed: ${error.message} (Code: ${error.code})`));
               }
             } else {
-              logger.info('Email server ready to send messages');
+              logger.info('Email server ready to send messages', {
+                attempt: retryCount + 1,
+                totalAttempts: maxRetries
+              });
               resolve(success);
             }
           });
@@ -84,10 +122,21 @@ const sendEmail = async (options) => {
       } catch (verifyError) {
         retryCount++;
         if (retryCount >= maxRetries) {
+          logger.error('All SMTP verification attempts failed', {
+            totalAttempts: maxRetries,
+            lastError: verifyError.message,
+            suggestion: 'Consider using SendGrid, Mailgun, or AWS SES for production'
+          });
           throw verifyError;
         }
-        // Wait before retrying
-        await new Promise(resolve => setTimeout(resolve, 2000 * retryCount));
+        
+        // Exponential backoff with jitter for cloud environments
+        const delay = Math.min(baseDelay * Math.pow(2, retryCount) + Math.random() * 1000, 30000);
+        logger.warn(`Retrying SMTP verification in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`, {
+          nextAttempt: retryCount + 1,
+          delay: delay
+        });
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
