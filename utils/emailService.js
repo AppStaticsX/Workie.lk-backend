@@ -1,59 +1,25 @@
 const nodemailer = require('nodemailer');
-const logger = require('./logger');
 
-// Create transporter with cloud-hosting optimized Gmail configuration
+// Create transporter with simplified Gmail configuration
 const createTransporter = () => {
-  // Use explicit SMTP configuration for better cloud compatibility
-  const config = {
-    host: 'smtp.gmail.com',
-    port: 587, // Use port 587 for better cloud compatibility
-    secure: false, // Use STARTTLS
+  return nodemailer.createTransporter({
+    service: 'gmail',
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
     },
-    // Optimized timeout settings for cloud hosting
-    connectionTimeout: 30000, // 30 seconds (reduced from 60)
-    greetingTimeout: 15000,   // 15 seconds (reduced from 30)
-    socketTimeout: 30000,     // 30 seconds (reduced from 60)
-    // Enhanced TLS settings for cloud providers
     tls: {
-      rejectUnauthorized: false, // More secure
-    },
-    // Pool settings optimized for cloud hosting
-    pool: true,
-    maxConnections: 2, // Increased slightly for better throughput
-    maxMessages: 100,  // Increased for efficiency
-    rateDelta: 2000,   // Slower rate for better reliability
-    rateLimit: 3,      // Conservative rate limit
-    // Add retry and keepalive for cloud environments
-    retry: 3,
-    keepAlive: true,
-    // Debug option
-    debug: process.env.NODE_ENV === 'development',
-    logger: process.env.NODE_ENV === 'development'
-  };
-
-  // Alternative configuration for problematic cloud providers
-  if (process.env.USE_ALTERNATIVE_SMTP === 'true') {
-    config.host = 'smtp.gmail.com';
-    config.port = 465; // SSL port as alternative
-    config.secure = true;
-    config.tls = {
-      rejectUnauthorized: false,
-      servername: 'smtp.gmail.com'
-    };
-  }
-
-  return nodemailer.createTransport(config);
+      rejectUnauthorized: false
+    }
+  });
 };
 
-// Send email function with enhanced error handling
+// Send email function
 const sendEmail = async (options) => {
   try {
     // Validate email configuration
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      throw new Error('Email configuration missing: EMAIL_USER or EMAIL_PASS not set in environment variables');
+      throw new Error('Email configuration missing');
     }
 
     // Validate recipient email
@@ -62,139 +28,19 @@ const sendEmail = async (options) => {
     }
 
     const transporter = createTransporter();
-    
-    // Enhanced verification with cloud-optimized retry logic
-    let retryCount = 0;
-    const maxRetries = 5; // Increased retries for cloud environments
-    const baseDelay = 3000; // Base delay in milliseconds
-    
-    while (retryCount < maxRetries) {
-      try {
-        await new Promise((resolve, reject) => {
-          const verifyTimeout = setTimeout(() => {
-            reject(new Error('Verification timeout - cloud hosting may be blocking SMTP connections'));
-          }, 20000); // 20 second timeout for verification
-          
-          transporter.verify(function (error, success) {
-            clearTimeout(verifyTimeout);
-            
-            if (error) {
-              logger.error(`Transporter verification error (attempt ${retryCount + 1}/${maxRetries})`, {
-                error: error.message,
-                stack: error.stack,
-                code: error.code,
-                command: error.command,
-                attempt: retryCount + 1,
-                totalAttempts: maxRetries,
-                emailConfig: {
-                  host: 'smtp.gmail.com',
-                  port: 587,
-                  user: process.env.EMAIL_USER ? '***configured***' : 'missing',
-                  pass: process.env.EMAIL_PASS ? '***configured***' : 'missing'
-                }
-              });
-              
-              // Provide specific error guidance for cloud hosting
-              if (error.code === 'EAUTH') {
-                reject(new Error('Gmail authentication failed. Check app password and 2FA settings.'));
-              } else if (error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT') {
-                if (retryCount < maxRetries - 1) {
-                  reject(new Error(`SMTP connection failed (attempt ${retryCount + 1}). Retrying with exponential backoff...`));
-                } else {
-                  reject(new Error('SMTP connection persistently failing. Cloud hosting may be blocking Gmail SMTP. Consider using alternative email service like SendGrid.'));
-                }
-              } else if (error.code === 'EDNS') {
-                reject(new Error('DNS resolution failed for Gmail SMTP server. Check network connectivity.'));
-              } else {
-                reject(new Error(`Email server connection failed: ${error.message} (Code: ${error.code})`));
-              }
-            } else {
-              logger.info('Email server ready to send messages', {
-                attempt: retryCount + 1,
-                totalAttempts: maxRetries
-              });
-              resolve(success);
-            }
-          });
-        });
-        break; // Success, exit retry loop
-      } catch (verifyError) {
-        retryCount++;
-        if (retryCount >= maxRetries) {
-          logger.error('All SMTP verification attempts failed', {
-            totalAttempts: maxRetries,
-            lastError: verifyError.message,
-            suggestion: 'Consider using SendGrid, Mailgun, or AWS SES for production'
-          });
-          throw verifyError;
-        }
-        
-        // Exponential backoff with jitter for cloud environments
-        const delay = Math.min(baseDelay * Math.pow(2, retryCount) + Math.random() * 1000, 30000);
-        logger.warn(`Retrying SMTP verification in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`, {
-          nextAttempt: retryCount + 1,
-          delay: delay
-        });
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
 
     const mailOptions = {
       from: `"Workie.lk" <${process.env.EMAIL_USER}>`,
       to: options.to,
       subject: options.subject,
       text: options.text,
-      html: options.html,
-      // Additional headers for better deliverability
-      headers: {
-        'X-Priority': '1',
-        'X-MSMail-Priority': 'High',
-        'Importance': 'high'
-      }
+      html: options.html
     };
 
-    // Send email with retry logic
-    let sendRetryCount = 0;
-    const maxSendRetries = 3;
-    
-    while (sendRetryCount < maxSendRetries) {
-      try {
-        const result = await transporter.sendMail(mailOptions);
-        logger.info('Email sent successfully', {
-          messageId: result.messageId,
-          to: options.to,
-          subject: options.subject,
-          response: result.response,
-          attempt: sendRetryCount + 1
-        });
-        return result;
-      } catch (sendError) {
-        sendRetryCount++;
-        logger.warn(`Email send attempt ${sendRetryCount}/${maxSendRetries} failed`, {
-          error: sendError.message,
-          code: sendError.code,
-          to: options.to,
-          subject: options.subject
-        });
-        
-        if (sendRetryCount >= maxSendRetries) {
-          throw sendError;
-        }
-        
-        // Wait before retrying (exponential backoff)
-        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, sendRetryCount)));
-      }
-    }
+    const result = await transporter.sendMail(mailOptions);
+    return result;
   } catch (error) {
-    logger.error('Email sending failed', {
-      error: error.message,
-      stack: error.stack,
-      to: options.to,
-      subject: options.subject,
-      code: error.code,
-      command: error.command
-    });
-    throw error;
+    throw new Error(`Email sending failed: ${error.message}`);
   }
 };
 

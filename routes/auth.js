@@ -161,7 +161,6 @@ router.post('/register', validateRegister, async (req, res) => {
     try {
       await sendOtpEmail(user.email, otp, user.firstName);
     } catch (emailError) {
-      console.error('Failed to send OTP email:', emailError);
       // Still allow registration to succeed but inform user about email issue
       return res.status(201).json({
         success: true,
@@ -324,7 +323,6 @@ router.post('/forgot-password', async (req, res) => {
       try {
         await sendPasswordResetPin(user.email, user.firstName, resetPin);
       } catch (emailError) {
-        console.error('Failed to send reset PIN email:', emailError);
         return res.status(500).json({
           success: false,
           message: 'Failed to send reset PIN. Please try again.'
@@ -497,7 +495,6 @@ router.put('/change-password', auth, async (req, res) => {
 // @desc    Verify OTP for email verification
 // @access  Public
 router.post('/verify-otp', async (req, res) => {
-  console.log('Verify OTP endpoint hit:', req.body); // Debug log
   try {
     const { email, otp } = req.body;
 
@@ -534,7 +531,6 @@ router.post('/verify-otp', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Email verification error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -589,7 +585,6 @@ router.post('/resend-otp', async (req, res) => {
         message: 'OTP sent successfully'
       });
     } catch (emailError) {
-      console.error('Failed to send OTP email during resend:', emailError);
       res.status(500).json({
         success: false,
         message: 'Failed to send OTP. Please check your email address or try again later.',
@@ -598,7 +593,6 @@ router.post('/resend-otp', async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Resend OTP error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error during OTP resend',
@@ -611,7 +605,6 @@ router.post('/resend-otp', async (req, res) => {
 // @desc    Google Sign-In authentication
 // @access  Public
 router.post('/google-signin', async (req, res) => {
-  console.log('Google Sign-In request body:', req.body); // Debug log
   try {
     const { accessToken, userInfo } = req.body;
         
@@ -641,7 +634,7 @@ router.post('/google-signin', async (req, res) => {
           };
         }
       } catch (error) {
-        console.error('Access Token verification failed:', error);
+        // Access token verification failed, will use userInfo fallback
       }
     }
 
@@ -735,7 +728,6 @@ router.post('/google-signin', async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Google Sign-In Error:', error);
     res.status(500).json({
       success: false,
       message: 'Google sign-in failed',
@@ -749,8 +741,6 @@ router.post('/google-signin', async (req, res) => {
 // @access  Private
 router.post('/worker-verification', auth, async (req, res) => {
   try {
-    console.log('Worker verification request received:', req.body);
-    console.log('User ID from auth middleware:', req.user?.id);
     
     const {
       categories,
@@ -790,7 +780,6 @@ router.post('/worker-verification', auth, async (req, res) => {
       if (!address) missingFields.push('address');
       if (!phone) missingFields.push('phone');
       
-      console.log('Missing required fields:', missingFields);
       return res.status(400).json({
         success: false,
         message: `Missing required fields: ${missingFields.join(', ')}`
@@ -827,10 +816,7 @@ router.post('/worker-verification', auth, async (req, res) => {
     
     if (!profile) {
       // Create new profile if doesn't exist
-      console.log('Creating new profile for user:', req.user.id);
       profile = new Profile({ user: req.user.id });
-    } else {
-      console.log('Updating existing profile for user:', req.user.id);
     }
 
     // Parse categories if it's a string
@@ -839,7 +825,6 @@ router.post('/worker-verification', auth, async (req, res) => {
       try {
         parsedCategories = JSON.parse(categories);
       } catch (error) {
-        console.log('Error parsing categories:', error.message);
         return res.status(400).json({
           success: false,
           message: 'Invalid categories format - must be a valid JSON array'
@@ -908,44 +893,28 @@ router.post('/worker-verification', auth, async (req, res) => {
     profile.workerVerificationStatus = 'pending';
     profile.workerVerificationSubmittedAt = new Date();
 
-    console.log('Saving profile with data:', profile.toObject());
     await profile.save();
-    console.log('Profile saved successfully');
 
     // Update user to mark as worker if not already
-    console.log('Finding user by ID:', req.user.id);
     const user = await User.findById(req.user.id);
     
     if (!user) {
-      console.error('User not found with ID:', req.user.id);
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
     
-    console.log('Current user type:', user.userType);
     if (user.userType !== 'worker') {
-      console.log('Updating user type from', user.userType, 'to worker');
       user.userType = 'worker';
       
       try {
         await user.save();
-        console.log('User type updated successfully to:', user.userType);
-        
-        // Verify the update
-        const updatedUser = await User.findById(req.user.id);
-        console.log('Verified user type in database:', updatedUser.userType);
       } catch (userSaveError) {
-        console.error('Error saving user type:', userSaveError);
         // Don't fail the whole request if user type update fails
-        console.log('Continuing despite user type update failure...');
       }
-    } else {
-      console.log('User type already set to worker');
     }
 
-    console.log('Worker verification completed successfully');
     res.status(200).json({
       success: true,
       message: 'Worker verification data submitted successfully',
@@ -968,9 +937,6 @@ router.post('/worker-verification', auth, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Worker verification error:', error);
-    console.error('Error stack:', error.stack);
-    
     // Check for specific MongoDB validation errors
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map(err => err.message);
@@ -1059,7 +1025,6 @@ router.put('/update-role', auth, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Update role error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
