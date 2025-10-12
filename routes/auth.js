@@ -157,9 +157,22 @@ router.post('/register', validateRegister, async (req, res) => {
     user.emailVerificationExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
     await user.save();
 
-    // Send OTP email (do not block response on error)
-    sendOtpEmail(user.email, otp, user.firstName)
-      .catch(err => console.error('Failed to send OTP email:', err));
+    // Send OTP email - handle errors properly
+    try {
+      await sendOtpEmail(user.email, otp, user.firstName);
+    } catch (emailError) {
+      console.error('Failed to send OTP email:', emailError);
+      // Still allow registration to succeed but inform user about email issue
+      return res.status(201).json({
+        success: true,
+        message: 'User registered successfully, but failed to send verification email. Please use the resend option.',
+        emailSent: false,
+        data: {
+          user,
+          token: generateToken(user._id)
+        }
+      });
+    }
 
     // Generate token
     const token = generateToken(user._id);
@@ -167,6 +180,7 @@ router.post('/register', validateRegister, async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'User registered successfully. OTP sent to email for verification.',
+      emailSent: true,
       data: {
         user,
         token
@@ -568,18 +582,26 @@ router.post('/resend-otp', async (req, res) => {
     await user.save();
 
     // Send OTP email
-    await sendOtpEmail(user.email, otp, user.firstName);
-
-    res.status(200).json({
-      success: true,
-      message: 'OTP sent successfully'
-    });
+    try {
+      await sendOtpEmail(user.email, otp, user.firstName);
+      res.status(200).json({
+        success: true,
+        message: 'OTP sent successfully'
+      });
+    } catch (emailError) {
+      console.error('Failed to send OTP email during resend:', emailError);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP. Please check your email address or try again later.',
+        error: emailError.message
+      });
+    }
 
   } catch (error) {
     console.error('Resend OTP error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to send OTP',
+      message: 'Server error during OTP resend',
       error: error.message
     });
   }

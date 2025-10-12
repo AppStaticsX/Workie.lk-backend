@@ -154,14 +154,53 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/posts', postRoutes); // New: Posts routes
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   const healthStatus = {
     status: 'OK',
     message: 'Workie.lk API is running',
     timestamp: new Date().toISOString(),
     database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    email: {
+      configured: !!(process.env.EMAIL_USER && process.env.EMAIL_PASS),
+      user: process.env.EMAIL_USER ? 'Configured' : 'Missing',
+      password: process.env.EMAIL_PASS ? 'Configured' : 'Missing'
+    }
   };
+
+  // Test email service if requested
+  if (req.query.test_email === 'true') {
+    try {
+      const nodemailer = require('nodemailer');
+      const transporter = nodemailer.createTransporter({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      await new Promise((resolve, reject) => {
+        transporter.verify(function (error, success) {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(success);
+          }
+        });
+      });
+
+      healthStatus.email.smtp_test = 'Connected';
+    } catch (error) {
+      healthStatus.email.smtp_test = 'Failed';
+      healthStatus.email.smtp_error = error.message;
+    }
+  }
 
   const statusCode = mongoose.connection.readyState === 1 ? 200 : 503;
   res.status(statusCode).json(healthStatus);

@@ -70,29 +70,6 @@ const jobSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  contactInfo: {
-    name: {
-      type: String,
-      required: [true, 'Contact name is required'],
-      trim: true
-    },
-    phone: {
-      type: String,
-      required: [true, 'Contact phone is required'],
-      trim: true
-    },
-    whatsapp: {
-      type: String,
-      trim: true,
-      default: ''
-    },
-    email: {
-      type: String,
-      trim: true,
-      lowercase: true,
-      default: ''
-    }
-  },
   requirements: [{
     type: String,
     trim: true

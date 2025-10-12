@@ -20,6 +20,11 @@ const createTransporter = () => {
 // Send email function
 const sendEmail = async (options) => {
   try {
+    // Validate email configuration
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      throw new Error('Email configuration missing: EMAIL_USER or EMAIL_PASS not set in environment variables');
+    }
+
     const transporter = createTransporter();
     
     // Verify transporter connection
@@ -29,13 +34,16 @@ const sendEmail = async (options) => {
           logger.error('Transporter verification error', {
             error: error.message,
             stack: error.stack,
+            code: error.code,
+            command: error.command,
             emailConfig: {
               host: 'smtp.gmail.com',
               port: 587,
-              user: process.env.EMAIL_USER ? '***configured***' : 'missing'
+              user: process.env.EMAIL_USER ? '***configured***' : 'missing',
+              pass: process.env.EMAIL_PASS ? '***configured***' : 'missing'
             }
           });
-          reject(error);
+          reject(new Error(`Email server connection failed: ${error.message}`));
         } else {
           logger.info('Email server ready to send messages');
           resolve(success);
