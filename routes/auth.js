@@ -323,9 +323,12 @@ router.post('/forgot-password', async (req, res) => {
       try {
         await sendPasswordResetPin(user.email, user.firstName, resetPin);
       } catch (emailError) {
-        return res.status(500).json({
+        console.error('Failed to send password reset PIN:', emailError);
+        return res.status(200).json({
           success: false,
-          message: 'Failed to send reset PIN. Please try again.'
+          message: 'Failed to send reset PIN. Please check your email address or try again later.',
+          emailSent: false,
+          error: 'email_failed'
         });
       }
     } else {
