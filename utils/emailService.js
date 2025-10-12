@@ -3,7 +3,7 @@ const logger = require('./logger');
 
 // Create transporter with improved Gmail configuration
 const createTransporter = () => {
-  return nodemailer.createTransporter({
+  return nodemailer.createTransport({
     service: 'gmail', // Use Gmail service for better reliability
     auth: {
       user: process.env.EMAIL_USER,

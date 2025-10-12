@@ -26,7 +26,7 @@ const testEmailService = async () => {
   try {
     // 2. Create and test transporter
     console.log('2. Creating SMTP Transporter...');
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       service: 'gmail', // Use service instead of manual config
       auth: {
         user: process.env.EMAIL_USER,
