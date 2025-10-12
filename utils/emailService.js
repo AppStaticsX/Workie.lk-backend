@@ -1,9 +1,11 @@
 const nodemailer = require('nodemailer');
 
-// Create transporter with simplified Gmail configuration
+// Create transporter with explicit Gmail configuration
 const createTransporter = () => {
   return nodemailer.createTransporter({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // true for 465, false for other ports
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
@@ -14,12 +16,12 @@ const createTransporter = () => {
   });
 };
 
-// Send email function
+// Send email function with proper verification
 const sendEmail = async (options) => {
   try {
     // Validate email configuration
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      throw new Error('Email configuration missing');
+      throw new Error('Email configuration missing: EMAIL_USER or EMAIL_PASS not set');
     }
 
     // Validate recipient email
@@ -28,6 +30,19 @@ const sendEmail = async (options) => {
     }
 
     const transporter = createTransporter();
+
+    // Verify transporter connection
+    try {
+      await transporter.verify();
+    } catch (verifyError) {
+      if (verifyError.code === 'EAUTH') {
+        throw new Error('Gmail authentication failed. Check if 2FA is enabled and you are using an App Password');
+      } else if (verifyError.code === 'ECONNECTION') {
+        throw new Error('Cannot connect to Gmail SMTP server. Check internet connection');
+      } else {
+        throw new Error(`Email server verification failed: ${verifyError.message}`);
+      }
+    }
 
     const mailOptions = {
       from: `"Workie.lk" <${process.env.EMAIL_USER}>`,
@@ -38,8 +53,14 @@ const sendEmail = async (options) => {
     };
 
     const result = await transporter.sendMail(mailOptions);
+    
+    if (!result.messageId) {
+      throw new Error('Email was not sent successfully - no message ID returned');
+    }
+    
     return result;
   } catch (error) {
+    // Re-throw with more specific error message
     throw new Error(`Email sending failed: ${error.message}`);
   }
 };

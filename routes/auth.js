@@ -1038,6 +1038,34 @@ router.get('/test', (req, res) => {
   res.json({ message: 'Auth routes are working!' });
 });
 
+// Test email endpoint
+router.post('/test-email', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Test email sending
+    await sendOtpEmail(email, '12345', 'Test User');
+    
+    res.json({
+      success: true,
+      message: 'Test email sent successfully!'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Email test failed',
+      error: error.message
+    });
+  }
+});
+
 // Debug endpoint to test authentication
 router.get('/debug', auth, (req, res) => {
   res.json({ 
