@@ -294,8 +294,11 @@ router.post('/logout', auth, (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
+    
+    console.log(`📧 Reset password request received for: ${email}`);
 
     if (!email) {
+      console.log('❌ Email not provided in request');
       return res.status(400).json({
         success: false,
         message: 'Email is required'
@@ -305,45 +308,133 @@ router.post('/forgot-password', async (req, res) => {
     // Check if user exists in database
     const user = await User.findOne({ email });
     if (!user) {
+      console.log(`❌ No user found with email: ${email}`);
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email address'
+      });
+    }
+    
+    console.log(`✅ User found: ${user.firstName} ${user.lastName}`)
+
+    // Check if there is already a valid PIN
+    const now = Date.now();
+    const hasValidPin = user.passwordResetPin && 
+                       user.passwordResetPinExpires && 
+                       user.passwordResetPinExpires > now;
+    
+    if (hasValidPin) {
+      // If valid PIN exists, inform user without sending another email
+      return res.status(200).json({
+        success: true,
+        message: 'A valid PIN has already been sent to your email address. Please check your inbox.',
+        alreadySent: true
+      });
+    }
+
+    // Generate new 5-digit PIN
+    const resetPin = Math.floor(10000 + Math.random() * 90000).toString();
+    
+    // Save PIN to database first
+    user.passwordResetPin = resetPin;
+    user.passwordResetPinExpires = now + 10 * 60 * 1000; // 10 minutes
+    await user.save();
+    
+    // Send PIN via email
+    try {
+      await sendPasswordResetPin(user.email, user.firstName, resetPin);
+      console.log(`Password reset PIN sent successfully to: ${user.email}`);
+    } catch (emailError) {
+      console.error('Failed to send password reset PIN:', emailError);
+      // Clear the PIN from database if email failed
+      user.passwordResetPin = undefined;
+      user.passwordResetPinExpires = undefined;
+      await user.save();
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send reset PIN. Please check your email address or try again later.',
+        emailSent: false,
+        error: 'email_failed'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Reset PIN sent to your email address',
+      emailSent: true
+    });
+  } catch (error) {
+    console.error('❌ Forgot password route error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// @route   POST /api/auth/resend-reset-pin
+// @desc    Resend password reset PIN to email
+// @access  Public
+router.post('/resend-reset-pin', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    console.log(`📧 Resend reset PIN request for: ${email}`);
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Check if user exists
+    const user = await User.findOne({ email });
+    if (!user) {
       return res.status(404).json({
         success: false,
         message: 'No account found with this email address'
       });
     }
 
-    // Only send a new PIN if there is no valid PIN
+    // Generate new PIN (always generate a new one for resend)
+    const resetPin = Math.floor(10000 + Math.random() * 90000).toString();
     const now = Date.now();
-    if (!user.passwordResetPin || !user.passwordResetPinExpires || user.passwordResetPinExpires < now) {
-      // Generate 5-digit PIN
-      const resetPin = Math.floor(10000 + Math.random() * 90000).toString();
-      user.passwordResetPin = resetPin;
-      user.passwordResetPinExpires = now + 10 * 60 * 1000; // 10 minutes
-      await user.save();
-      // Send PIN via email
-      try {
-        await sendPasswordResetPin(user.email, user.firstName, resetPin);
-      } catch (emailError) {
-        console.error('Failed to send password reset PIN:', emailError);
-        return res.status(200).json({
-          success: false,
-          message: 'Failed to send reset PIN. Please check your email address or try again later.',
-          emailSent: false,
-          error: 'email_failed'
-        });
-      }
-    } else {
-      // If valid PIN exists, do not send another email
-      return res.status(200).json({
+    
+    // Save new PIN to database
+    user.passwordResetPin = resetPin;
+    user.passwordResetPinExpires = now + 10 * 60 * 1000; // 10 minutes
+    await user.save();
+    
+    // Send PIN via email
+    try {
+      await sendPasswordResetPin(user.email, user.firstName, resetPin);
+      console.log(`✅ Reset PIN resent successfully to: ${user.email}`);
+      
+      res.status(200).json({
         success: true,
-        message: 'A valid PIN has already been sent to your email address. Please check your inbox.'
+        message: 'Reset PIN has been resent to your email address',
+        emailSent: true
+      });
+    } catch (emailError) {
+      console.error('❌ Failed to resend password reset PIN:', emailError);
+      
+      // Clear the PIN from database if email failed
+      user.passwordResetPin = undefined;
+      user.passwordResetPinExpires = undefined;
+      await user.save();
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to resend reset PIN. Please try again later.',
+        emailSent: false,
+        error: 'email_failed'
       });
     }
-
-    res.status(200).json({
-      success: true,
-      message: 'Reset PIN sent to your email address'
-    });
   } catch (error) {
+    console.error('❌ Resend reset PIN route error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error',
